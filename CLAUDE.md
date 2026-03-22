@@ -52,7 +52,7 @@ cutsense/
 ## 핵심 기능: 2-Pass Vision AI 자막 생성
 
 ### 작동 방식
-1. FFmpeg으로 영상에서 2초 간격 프레임 추출
+1. FFmpeg으로 영상에서 3초 간격 프레임 추출
 2. **Pass 1**: 8장 샘플링 → AI가 영상 전체 맥락 파악 (어떤 앱인지, 뭘 시연하는지)
 3. **Pass 2**: 6프레임씩 배치 → 맥락 기반으로 장면 전환 감지 + 센스 있는 자막 생성
 4. 자동 병합: 동일/유사 자막 합침
@@ -65,22 +65,22 @@ cutsense/
 - 15~25자 이내, 가벼운 유머 허용
 
 ### 비용
-- 4분 영상 기준: ~$0.50~0.64 (Claude Sonnet)
+- 4분 영상 기준: ~$0.43 (Claude Sonnet, 3초 간격)
 - 실행 전 confirm() 팝업으로 예상 비용 표시
 
 ---
 
 ## 알려진 이슈 (타 AI 리뷰 결과 포함)
 
-### 즉시 수정 필요
-1. **eval() 보안 취약점** — video_processor.py:79, fps 파싱에 eval() 사용 → 안전한 파싱으로 교체
-2. **Path Traversal** — /api/download/{filename}에 os.path.basename() 미적용
-3. **이벤트 루프 블로킹** — async def 안에서 subprocess.run 동기 호출 → run_in_threadpool 필요
-4. **SRT 경로 따옴표** — subprocess list 모드에서 single quote 제거 또는 tempfile 사용
+### ✅ 수정 완료 (2026-03-23 리뷰 패치)
+1. ~~**eval() 보안 취약점**~~ → 안전한 문자열 split 파싱으로 교체 완료
+2. ~~**Path Traversal**~~ → os.path.basename() 적용 완료
+3. ~~**이벤트 루프 블로킹**~~ → run_in_threadpool 적용 완료
+4. ~~**SRT 경로 따옴표**~~ → tempfile + 따옴표 제거 완료
+5. ~~**SMART_INTERVAL 2초→3초**~~ → 비용 ~30% 절감 적용 완료
 
-### 비용 최적화
-5. FFmpeg Scene Detection (`select='gt(scene,0.3)'`)으로 장면 전환 프레임만 추출 → API 80% 절감 가능
-6. 간격 3초 + 배치 8로 조정 → $0.32까지 절감 가능
+### 비용 추가 최적화 (미적용)
+6. FFmpeg Scene Detection (`select='gt(scene,0.3)'`)으로 장면 전환 프레임만 추출 → API 80% 절감 가능 (향후)
 
 ### 향후 구조 개선
 7. 프론트엔드 모듈화 — Vite + React 컴포넌트 분리 (기능 추가 시 전환)
@@ -138,3 +138,4 @@ cutsense/
 | 2026-03-23 | "너는 나야" 자기 검증 → 12개 버그 발견/수정 |
 | 2026-03-23 | 내보내기 플로우 6개 버그 수정 (URL, 경로, Generator 등) |
 | 2026-03-23 | 타 AI 크로스 리뷰 (Opus + Gemini) → 추가 이슈 5건 확인 |
+| 2026-03-23 | 리뷰 기반 보안/성능 패치 6건 적용 (eval, Path Traversal, threadpool, SRT, 3초 간격) |

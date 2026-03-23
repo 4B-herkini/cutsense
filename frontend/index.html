@@ -4,9 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CutSense - AI 비디오 에디터</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#3C3F41">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png">
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
 
-    <!-- Pretendard Font (Korean web font) -->
-    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+    <!-- Happiness Sans (현대 해피니스 산스) -->
+    <style>
+        @font-face {
+            font-family: 'Happiness Sans';
+            src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2205@1.0/Happiness-Sans-Regular.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Happiness Sans';
+            src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2205@1.0/Happiness-Sans-Bold.woff2') format('woff2');
+            font-weight: 700;
+            font-style: normal;
+        }
+    </style>
 
     <!-- React, ReactDOM, Babel -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -17,13 +34,18 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
+        /* ================================================================
+           CutSense — Darcula Theme (Android Studio 풍)
+           Happiness Sans + Darcula 색상 체계
+           ================================================================ */
+
         * {
-            font-family: 'Pretendard Variable', 'Pretendard', sans-serif;
+            font-family: 'Happiness Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         }
 
         body {
-            background-color: #0f0f0f;
-            color: #e5e5e5;
+            background-color: #2B2B2B;
+            color: #A9B7C6;
             margin: 0;
             padding: 0;
             overflow: hidden;
@@ -38,69 +60,74 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
-            background-color: #0f0f0f;
+            background-color: #2B2B2B;
         }
 
+        /* 헤더 (툴바) */
         .header {
-            background-color: #1a1a1a;
-            border-bottom: 1px solid #2a2a2a;
-            padding: 12px 20px;
+            background-color: #3C3F41;
+            border-bottom: 1px solid #515658;
+            padding: 8px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            height: 60px;
+            height: 44px;
             flex-shrink: 0;
         }
 
         .header-title {
-            font-size: 20px;
-            font-weight: 600;
-            color: #6366f1;
+            font-size: 16px;
+            font-weight: 700;
+            color: #FFC66D;
             letter-spacing: 0.5px;
         }
 
         .header-button {
-            background-color: #6366f1;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 6px;
+            background-color: #4C5052;
+            color: #A9B7C6;
+            border: 1px solid #5E6366;
+            padding: 6px 14px;
+            border-radius: 4px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 12px;
             transition: all 0.2s ease;
         }
 
         .header-button:hover {
-            background-color: #4f46e5;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+            background-color: #5E6366;
+            color: #DCDCDC;
+            border-color: #6E7377;
         }
 
+        /* 메인 레이아웃 */
         .main-content {
             display: flex;
             flex: 1;
             overflow: hidden;
             gap: 1px;
-            background-color: #1a1a1a;
+            background-color: #3C3F41;
         }
 
         .left-panel {
             flex: 0 0 60%;
             display: flex;
             flex-direction: column;
-            background-color: #0f0f0f;
-            border-right: 1px solid #2a2a2a;
+            background-color: #2B2B2B;
+            border-right: 1px solid #515658;
             overflow: hidden;
         }
 
+        /* 비디오 영역 */
         .video-container {
             flex: 1;
-            background-color: #000;
+            background-color: #1E1E1E;
             display: flex;
             align-items: center;
             justify-content: center;
             overflow: hidden;
             position: relative;
+            border: 1px solid #515658;
+            border-radius: 2px;
         }
 
         .video-player {
@@ -116,34 +143,35 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            border: 2px dashed #6366f1;
-            border-radius: 8px;
+            border: 2px dashed #515658;
+            border-radius: 4px;
             cursor: pointer;
-            background-color: rgba(99, 102, 241, 0.05);
+            background-color: rgba(204, 120, 50, 0.03);
             transition: all 0.3s ease;
             flex-direction: column;
             gap: 16px;
         }
 
         .drop-zone:hover {
-            background-color: rgba(99, 102, 241, 0.1);
-            border-color: #818cf8;
+            background-color: rgba(204, 120, 50, 0.08);
+            border-color: #CC7832;
         }
 
         .drop-zone.dragover {
-            background-color: rgba(99, 102, 241, 0.15);
-            border-color: #6366f1;
+            background-color: rgba(204, 120, 50, 0.12);
+            border-color: #CC7832;
         }
 
         .drop-zone-text {
             text-align: center;
-            color: #9ca3af;
+            color: #808080;
             font-size: 14px;
         }
 
+        /* 컨트롤 바 */
         .controls {
-            background-color: #1a1a1a;
-            border-top: 1px solid #2a2a2a;
+            background-color: #3C3F41;
+            border-top: 1px solid #515658;
             padding: 12px 16px;
             display: flex;
             gap: 12px;
@@ -153,56 +181,59 @@
         }
 
         .control-button {
-            background-color: #2a2a2a;
-            border: none;
-            color: #e5e5e5;
+            background-color: #4C5052;
+            border: 1px solid #5E6366;
+            color: #A9B7C6;
             padding: 6px 12px;
-            border-radius: 4px;
+            border-radius: 3px;
             cursor: pointer;
             font-size: 13px;
             transition: all 0.2s ease;
         }
 
         .control-button:hover {
-            background-color: #3a3a3a;
-            color: #fff;
+            background-color: #5E6366;
+            color: #DCDCDC;
         }
 
         .control-button.primary {
-            background-color: #6366f1;
-            color: white;
+            background-color: #365880;
+            color: #A9B7C6;
+            border-color: #4A6D8C;
         }
 
         .control-button.primary:hover {
-            background-color: #4f46e5;
+            background-color: #4A6D8C;
+            color: #DCDCDC;
         }
 
         .control-button:disabled {
-            opacity: 0.5;
+            opacity: 0.4;
             cursor: not-allowed;
         }
 
         .time-display {
             font-size: 13px;
-            color: #9ca3af;
-            font-family: 'Courier New', monospace;
+            color: #808080;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
             margin-left: auto;
         }
 
+        /* 오른쪽 패널 */
         .right-panel {
             flex: 0 0 40%;
             display: flex;
             flex-direction: column;
-            background-color: #0f0f0f;
-            border-left: 1px solid #2a2a2a;
+            background-color: #2B2B2B;
+            border-left: 1px solid #515658;
             overflow: hidden;
         }
 
         .tab-header {
             display: flex;
-            background-color: #1a1a1a;
-            border-bottom: 1px solid #2a2a2a;
-            height: 45px;
+            background-color: #3C3F41;
+            border-bottom: 1px solid #515658;
+            height: 40px;
             flex-shrink: 0;
         }
 
@@ -210,21 +241,27 @@
             flex: 1;
             background: none;
             border: none;
-            color: #9ca3af;
+            color: #808080;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 500;
             transition: all 0.2s ease;
             border-bottom: 2px solid transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
         }
 
         .tab-button:hover {
-            color: #e5e5e5;
+            color: #A9B7C6;
+            background-color: #4C5052;
         }
 
         .tab-button.active {
-            color: #6366f1;
-            border-bottom-color: #6366f1;
+            color: #A9B7C6;
+            border-bottom-color: #CC7832;
+            background-color: #2B2B2B;
         }
 
         .tab-content {
@@ -236,73 +273,23 @@
             gap: 12px;
         }
 
-        .tab-content::-webkit-scrollbar {
-            width: 8px;
-        }
+        .tab-content::-webkit-scrollbar { width: 8px; }
+        .tab-content::-webkit-scrollbar-track { background-color: #2B2B2B; }
+        .tab-content::-webkit-scrollbar-thumb { background-color: #515658; border-radius: 4px; }
+        .tab-content::-webkit-scrollbar-thumb:hover { background-color: #5E6366; }
 
-        .tab-content::-webkit-scrollbar-track {
-            background-color: transparent;
-        }
+        /* 폼 요소 */
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-label { font-size: 12px; font-weight: 700; color: #808080; text-transform: uppercase; letter-spacing: 0.5px; }
+        .form-input { background-color: #45494A; border: 1px solid #646464; color: #A9B7C6; padding: 8px 10px; border-radius: 3px; font-size: 13px; transition: all 0.2s ease; }
+        .form-input:focus { outline: none; border-color: #CC7832; box-shadow: none; }
+        .form-select { background-color: #45494A; border: 1px solid #646464; color: #A9B7C6; padding: 8px 10px; border-radius: 3px; font-size: 13px; cursor: pointer; transition: all 0.2s ease; }
+        .form-select:focus { outline: none; border-color: #CC7832; }
 
-        .tab-content::-webkit-scrollbar-thumb {
-            background-color: #3a3a3a;
-            border-radius: 4px;
-        }
-
-        .tab-content::-webkit-scrollbar-thumb:hover {
-            background-color: #4a4a4a;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .form-label {
-            font-size: 12px;
-            font-weight: 600;
-            color: #9ca3af;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .form-input {
-            background-color: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            color: #e5e5e5;
-            padding: 8px 10px;
-            border-radius: 4px;
-            font-size: 13px;
-            transition: all 0.2s ease;
-        }
-
-        .form-input:focus {
-            outline: none;
-            border-color: #6366f1;
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-        }
-
-        .form-select {
-            background-color: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            color: #e5e5e5;
-            padding: 8px 10px;
-            border-radius: 4px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .form-select:focus {
-            outline: none;
-            border-color: #6366f1;
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-        }
-
+        /* 타임라인 */
         .timeline-container {
-            background-color: #1a1a1a;
-            border-top: 1px solid #2a2a2a;
+            background-color: #3C3F41;
+            border-top: 1px solid #515658;
             height: 120px;
             flex-shrink: 0;
             display: flex;
@@ -312,1808 +299,104 @@
             overflow: hidden;
         }
 
-        .timeline-controls {
+        .timeline-controls { display: flex; gap: 8px; align-items: center; height: 32px; }
+        .timeline-zoom { display: flex; gap: 6px; align-items: center; }
+        .zoom-button { background-color: #4C5052; border: 1px solid #5E6366; color: #A9B7C6; width: 28px; height: 28px; border-radius: 3px; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; }
+        .zoom-button:hover { background-color: #5E6366; }
+
+        .timeline { flex: 1; background-color: #2B2B2B; border: 1px solid #515658; border-radius: 2px; position: relative; overflow-x: auto; overflow-y: hidden; cursor: pointer; }
+        .timeline::-webkit-scrollbar { height: 6px; }
+        .timeline::-webkit-scrollbar-track { background-color: #2B2B2B; }
+        .timeline::-webkit-scrollbar-thumb { background-color: #515658; border-radius: 3px; }
+        .timeline-track { position: relative; height: 100%; min-width: 100%; }
+        .timeline-segment { position: absolute; height: 100%; background-color: #365880; border-left: 2px solid #4A6D8C; border-right: 2px solid #4A6D8C; cursor: pointer; opacity: 0.8; transition: all 0.1s ease; }
+        .timeline-segment:hover { opacity: 1; box-shadow: 0 0 8px rgba(54, 88, 128, 0.5); }
+        .timeline-segment.selected { background-color: #4A6D8C; opacity: 1; }
+        .playhead { position: absolute; width: 2px; height: 100%; background-color: #CC7832; top: 0; left: 0; z-index: 10; pointer-events: none; }
+
+        /* 세그먼트 아이템 */
+        .segment-item { background-color: #3C3F41; border: 1px solid #515658; border-radius: 3px; padding: 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; transition: all 0.2s ease; }
+        .segment-item:hover { border-color: #CC7832; background-color: #45494A; }
+        .segment-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+        .segment-times { color: #808080; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 11px; }
+        .delete-button { background-color: #8B3E3E; border: none; color: #DCDCDC; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; transition: all 0.2s ease; }
+        .delete-button:hover { background-color: #A04040; }
+
+        /* 모달 */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+        .modal { background-color: #3C3F41; border: 1px solid #515658; border-radius: 6px; padding: 24px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5); }
+        .modal-title { font-size: 16px; font-weight: 700; color: #A9B7C6; margin-bottom: 16px; }
+        .modal-buttons { display: flex; gap: 12px; margin-top: 20px; justify-content: flex-end; }
+
+        /* 버튼 */
+        .button-primary { background-color: #365880; color: #A9B7C6; border: 1px solid #4A6D8C; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s ease; }
+        .button-primary:hover { background-color: #4A6D8C; color: #DCDCDC; }
+        .button-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+        .button-secondary { background-color: #4C5052; color: #A9B7C6; border: 1px solid #5E6366; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s ease; }
+        .button-secondary:hover { background-color: #5E6366; color: #DCDCDC; }
+
+        .color-picker { width: 100%; height: 40px; border: 1px solid #515658; border-radius: 3px; cursor: pointer; background-color: #45494A; }
+
+        /* AI 추천 */
+        .ai-recommendation { background-color: #3C3F41; border: 1px solid #515658; border-radius: 3px; padding: 10px; cursor: pointer; transition: all 0.2s ease; }
+        .ai-recommendation:hover { border-color: #CC7832; background-color: #45494A; }
+        .recommendation-title { font-size: 13px; font-weight: 500; color: #FFC66D; margin-bottom: 4px; }
+        .recommendation-times { font-size: 11px; color: #808080; font-family: 'JetBrains Mono', 'Courier New', monospace; }
+
+        /* 프로그레스 바 */
+        .progress-bar { width: 100%; height: 6px; background-color: #515658; border-radius: 3px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #365880, #6897BB); transition: width 0.3s ease; }
+
+        /* 토스트 */
+        .toast { position: fixed; bottom: 20px; right: 20px; background-color: #3C3F41; border: 1px solid #515658; border-left: 4px solid #6897BB; color: #A9B7C6; padding: 12px 16px; border-radius: 4px; font-size: 13px; z-index: 200; animation: slideIn 0.3s ease; }
+        .toast.error { border-left-color: #CF6171; }
+        .toast.success { border-left-color: #6A8759; }
+        @keyframes slideIn { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        .checkbox-group { display: flex; align-items: center; gap: 8px; height: 32px; }
+        .checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: #CC7832; }
+        .checkbox-label { font-size: 13px; color: #A9B7C6; cursor: pointer; user-select: none; }
+
+        /* 상태 바 */
+        .status-bar {
+            height: 24px;
+            background: #3C3F41;
+            border-top: 1px solid #515658;
             display: flex;
-            gap: 8px;
             align-items: center;
-            height: 32px;
-        }
-
-        .timeline-zoom {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-        }
-
-        .zoom-button {
-            background-color: #2a2a2a;
-            border: none;
-            color: #e5e5e5;
-            width: 28px;
-            height: 28px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-        }
-
-        .zoom-button:hover {
-            background-color: #3a3a3a;
-        }
-
-        .timeline {
-            flex: 1;
-            background-color: #0f0f0f;
-            border: 1px solid #2a2a2a;
-            border-radius: 4px;
-            position: relative;
-            overflow-x: auto;
-            overflow-y: hidden;
-            cursor: pointer;
-        }
-
-        .timeline::-webkit-scrollbar {
-            height: 6px;
-        }
-
-        .timeline::-webkit-scrollbar-track {
-            background-color: transparent;
-        }
-
-        .timeline::-webkit-scrollbar-thumb {
-            background-color: #3a3a3a;
-            border-radius: 3px;
-        }
-
-        .timeline-track {
-            position: relative;
-            height: 100%;
-            min-width: 100%;
-        }
-
-        .timeline-segment {
-            position: absolute;
-            height: 100%;
-            background-color: #6366f1;
-            border-left: 2px solid #4f46e5;
-            border-right: 2px solid #818cf8;
-            cursor: pointer;
-            opacity: 0.8;
-            transition: all 0.1s ease;
-        }
-
-        .timeline-segment:hover {
-            opacity: 1;
-            box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
-        }
-
-        .timeline-segment.selected {
-            background-color: #818cf8;
-            opacity: 1;
-        }
-
-        .playhead {
-            position: absolute;
-            width: 2px;
-            height: 100%;
-            background-color: #ef4444;
-            top: 0;
-            left: 0;
-            z-index: 10;
-            pointer-events: none;
-        }
-
-        .segment-item {
-            background-color: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            border-radius: 4px;
-            padding: 10px;
-            display: flex;
+            padding: 0 12px;
+            font-size: 11px;
+            color: #808080;
             justify-content: space-between;
-            align-items: center;
-            gap: 8px;
-            font-size: 12px;
-            transition: all 0.2s ease;
-        }
-
-        .segment-item:hover {
-            border-color: #6366f1;
-            background-color: rgba(99, 102, 241, 0.05);
-        }
-
-        .segment-info {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .segment-times {
-            color: #9ca3af;
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
-        }
-
-        .delete-button {
-            background-color: #ef4444;
-            border: none;
-            color: white;
-            padding: 4px 8px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 11px;
-            transition: all 0.2s ease;
-        }
-
-        .delete-button:hover {
-            background-color: #dc2626;
-        }
-
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(0, 0, 0, 0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
-        }
-
-        .modal {
-            background-color: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            border-radius: 8px;
-            padding: 24px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-        }
-
-        .modal-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #e5e5e5;
-            margin-bottom: 16px;
-        }
-
-        .modal-buttons {
-            display: flex;
-            gap: 12px;
-            margin-top: 20px;
-            justify-content: flex-end;
-        }
-
-        .button-primary {
-            background-color: #6366f1;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s ease;
-        }
-
-        .button-primary:hover {
-            background-color: #4f46e5;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
-        }
-
-        .button-secondary {
-            background-color: #2a2a2a;
-            color: #e5e5e5;
-            border: 1px solid #3a3a3a;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s ease;
-        }
-
-        .button-secondary:hover {
-            background-color: #3a3a3a;
-            border-color: #4a4a4a;
-        }
-
-        .color-picker {
-            width: 100%;
-            height: 40px;
-            border: 1px solid #2a2a2a;
-            border-radius: 4px;
-            cursor: pointer;
-            background-color: #1a1a1a;
-        }
-
-        .ai-recommendation {
-            background-color: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            border-radius: 4px;
-            padding: 10px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .ai-recommendation:hover {
-            border-color: #6366f1;
-            background-color: rgba(99, 102, 241, 0.05);
-        }
-
-        .recommendation-title {
-            font-size: 13px;
-            font-weight: 500;
-            color: #6366f1;
-            margin-bottom: 4px;
-        }
-
-        .recommendation-times {
-            font-size: 11px;
-            color: #9ca3af;
-            font-family: 'Courier New', monospace;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 6px;
-            background-color: #2a2a2a;
-            border-radius: 3px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #6366f1, #818cf8);
-            transition: width 0.3s ease;
-        }
-
-        .toast {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background-color: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            border-left: 4px solid #6366f1;
-            color: #e5e5e5;
-            padding: 12px 16px;
-            border-radius: 4px;
-            font-size: 13px;
-            z-index: 200;
-            animation: slideIn 0.3s ease;
-        }
-
-        .toast.error {
-            border-left-color: #ef4444;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(400px);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            height: 32px;
-        }
-
-        .checkbox {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-            accent-color: #6366f1;
-        }
-
-        .checkbox-label {
-            font-size: 13px;
-            color: #e5e5e5;
-            cursor: pointer;
-            user-select: none;
+            flex-shrink: 0;
         }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+    <!-- Components (분리된 파일) -->
+    <script type="text/babel" src="/components/Toast.js"></script>
+    <script type="text/babel" src="/components/SettingsModal.js"></script>
+    <script type="text/babel" src="/components/MenuBar.js"></script>
+    <script type="text/babel" src="/components/EditTab.js"></script>
+    <script type="text/babel" src="/components/SubtitleTab.js"></script>
+    <script type="text/babel" src="/components/AITab.js"></script>
+    <script type="text/babel" src="/components/ExportTab.js"></script>
+    <script type="text/babel" src="/components/Timeline.js"></script>
 
-        // Utility functions
-        const formatTime = (seconds) => {
-            if (!seconds || isNaN(seconds)) return "00:00";
-            const hours = Math.floor(seconds / 3600);
-            const minutes = Math.floor((seconds % 3600) / 60);
-            const secs = Math.floor(seconds % 60);
-            if (hours > 0) {
-                return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-            }
-            return `${minutes}:${secs.toString().padStart(2, '0')}`;
-        };
+    <!-- App (메인 컴포넌트) -->
+    <script type="text/babel" src="/components/App.js"></script>
 
-        const parseTime = (timeStr) => {
-            const parts = timeStr.split(':').map(p => parseInt(p) || 0);
-            if (parts.length === 3) {
-                return parts[0] * 3600 + parts[1] * 60 + parts[2];
-            } else if (parts.length === 2) {
-                return parts[0] * 60 + parts[1];
-            }
-            return 0;
-        };
-
-        // Toast component
-        const Toast = ({ message, type = 'info', onClose }) => {
-            useEffect(() => {
-                const timer = setTimeout(onClose, 3000);
-                return () => clearTimeout(timer);
-            }, [onClose]);
-
-            return (
-                <div className={`toast ${type}`}>
-                    {message}
-                </div>
-            );
-        };
-
-        // Settings Modal
-        const SettingsModal = ({ isOpen, onClose, settings, onSettingsChange, onSaveSettings }) => {
-            const [saving, setSaving] = useState(false);
-            const [status, setStatus] = useState(null);
-
-            const modelOptions = {
-                claude: [
-                    { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-                    { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
-                    { value: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
-                ],
-                grok: [
-                    { value: 'grok-2-vision-1212', label: 'Grok 2 Vision' },
-                    { value: 'grok-2-1212', label: 'Grok 2' },
-                ]
-            };
-
-            const handleSave = async () => {
-                setSaving(true);
-                setStatus(null);
-                try {
-                    const model = settings.model || modelOptions[settings.aiProvider][0].value;
-                    const response = await fetch(`${settings.serverUrl}/api/ai/settings`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            provider: settings.aiProvider,
-                            api_key: settings.apiKey,
-                            model: model,
-                        }),
-                    });
-                    const data = await response.json();
-                    if (data.success) {
-                        setStatus({ type: 'success', message: 'AI 설정 저장 완료!' });
-                        onSettingsChange({ ...settings, model });
-                        setTimeout(() => onClose(), 1000);
-                    } else {
-                        setStatus({ type: 'error', message: data.detail || '저장 실패' });
-                    }
-                } catch (err) {
-                    setStatus({ type: 'error', message: '서버 연결 실패: ' + err.message });
-                } finally {
-                    setSaving(false);
-                }
-            };
-
-            if (!isOpen) return null;
-
-            const currentModels = modelOptions[settings.aiProvider] || [];
-
-            return (
-                <div className="modal-overlay" onClick={onClose}>
-                    <div className="modal" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-title">AI 설정</div>
-
-                        <div className="form-group">
-                            <label className="form-label">AI 제공자</label>
-                            <select
-                                className="form-select"
-                                value={settings.aiProvider}
-                                onChange={(e) => {
-                                    const provider = e.target.value;
-                                    const defaultModel = modelOptions[provider][0].value;
-                                    onSettingsChange({ ...settings, aiProvider: provider, model: defaultModel });
-                                }}
-                            >
-                                <option value="claude">Claude (Anthropic)</option>
-                                <option value="grok">Grok (xAI)</option>
-                            </select>
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">모델</label>
-                            <select
-                                className="form-select"
-                                value={settings.model || currentModels[0]?.value}
-                                onChange={(e) => onSettingsChange({ ...settings, model: e.target.value })}
-                            >
-                                {currentModels.map(m => (
-                                    <option key={m.value} value={m.value}>{m.label}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">API 키</label>
-                            <input
-                                type="password"
-                                className="form-input"
-                                placeholder="API 키를 입력하세요"
-                                value={settings.apiKey}
-                                onChange={(e) => onSettingsChange({ ...settings, apiKey: e.target.value })}
-                            />
-                        </div>
-
-                        <div className="form-group">
-                            <label className="form-label">서버 URL</label>
-                            <input
-                                type="text"
-                                className="form-input"
-                                placeholder="http://localhost:9000"
-                                value={settings.serverUrl}
-                                onChange={(e) => onSettingsChange({ ...settings, serverUrl: e.target.value })}
-                            />
-                        </div>
-
-                        {status && (
-                            <div style={{
-                                padding: '8px 12px', borderRadius: '6px', fontSize: '12px',
-                                background: status.type === 'success' ? '#065f46' : '#7f1d1d',
-                                color: status.type === 'success' ? '#6ee7b7' : '#fca5a5',
-                            }}>
-                                {status.message}
-                            </div>
-                        )}
-
-                        <div className="modal-buttons">
-                            <button className="button-secondary" onClick={onClose}>
-                                취소
-                            </button>
-                            <button
-                                className="button-primary"
-                                onClick={handleSave}
-                                disabled={saving || !settings.apiKey}
-                            >
-                                {saving ? '저장 중...' : '저장'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // Edit Tab
-        const EditTab = ({ segments, videoRef, onAddSegment, onDeleteSegment, onCut, hasVideo, duration }) => {
-            const [inPoint, setInPoint] = useState(null);
-            const [outPoint, setOutPoint] = useState(null);
-
-            const handleSetIn = () => {
-                if (videoRef.current) {
-                    setInPoint(videoRef.current.currentTime);
-                }
-            };
-
-            const handleSetOut = () => {
-                if (videoRef.current) {
-                    setOutPoint(videoRef.current.currentTime);
-                }
-            };
-
-            const handleAddSegment = () => {
-                if (inPoint !== null && outPoint !== null && inPoint < outPoint) {
-                    onAddSegment({ start: inPoint, end: outPoint });
-                    setInPoint(null);
-                    setOutPoint(null);
-                }
-            };
-
-            return (
-                <div className="tab-content">
-                    <div className="form-group">
-                        <label className="form-label">구간 선택</label>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                            <button
-                                className="control-button primary"
-                                onClick={handleSetIn}
-                                disabled={!hasVideo}
-                            >
-                                구간 시작: {inPoint !== null ? formatTime(inPoint) : '--:--'}
-                            </button>
-                            <button
-                                className="control-button primary"
-                                onClick={handleSetOut}
-                                disabled={!hasVideo}
-                            >
-                                구간 끝: {outPoint !== null ? formatTime(outPoint) : '--:--'}
-                            </button>
-                        </div>
-                    </div>
-
-                    <button
-                        className="button-primary"
-                        onClick={handleAddSegment}
-                        disabled={inPoint === null || outPoint === null || inPoint >= outPoint}
-                        style={{ width: '100%' }}
-                    >
-                        + 구간 추가
-                    </button>
-
-                    <div style={{ marginTop: '12px' }}>
-                        <label className="form-label">추출된 구간 ({segments.length})</label>
-                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {segments.length === 0 ? (
-                                <div style={{ color: '#6b7280', fontSize: '12px', textAlign: 'center', padding: '16px' }}>
-                                    구간을 추가하세요
-                                </div>
-                            ) : (
-                                segments.map((seg, idx) => (
-                                    <div key={idx} className="segment-item">
-                                        <div className="segment-info">
-                                            <div style={{ color: '#e5e5e5' }}>구간 {idx + 1}</div>
-                                            <div className="segment-times">
-                                                {formatTime(seg.start)} - {formatTime(seg.end)} ({formatTime(seg.end - seg.start)})
-                                            </div>
-                                        </div>
-                                        <button
-                                            className="delete-button"
-                                            onClick={() => onDeleteSegment(idx)}
-                                        >
-                                            삭제
-                                        </button>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-
-                    <button
-                        className="button-primary"
-                        onClick={onCut}
-                        disabled={segments.length === 0}
-                        style={{ width: '100%', marginTop: '12px' }}
-                    >
-                        잘라내기 및 내보내기
-                    </button>
-                </div>
-            );
-        };
-
-        // Subtitle Tab
-        const SubtitleTab = ({ subtitles, onAddSubtitle, onUpdateSubtitle, onDeleteSubtitle, onApplySubtitles, onClearSubtitles, videoRef }) => {
-            const [newSubtitle, setNewSubtitle] = useState({
-                text: '',
-                startTime: '00:00',
-                endTime: '00:05',
-                fontSize: 20,
-                color: '#ffffff',
-                position: 'bottom',
-                backgroundColor: '#000000',
-                backgroundEnabled: false
+    <!-- PWA Service Worker 등록 -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('SW registered:', reg.scope))
+                    .catch(err => console.log('SW registration failed:', err));
             });
-
-            const handleAddSubtitle = () => {
-                if (newSubtitle.text.trim()) {
-                    onAddSubtitle({
-                        ...newSubtitle,
-                        startTime: parseTime(newSubtitle.startTime),
-                        endTime: parseTime(newSubtitle.endTime)
-                    });
-                    setNewSubtitle({
-                        text: '',
-                        startTime: '00:00',
-                        endTime: '00:05',
-                        fontSize: 20,
-                        color: '#ffffff',
-                        position: 'bottom',
-                        backgroundColor: '#000000',
-                        backgroundEnabled: false
-                    });
-                }
-            };
-
-            return (
-                <div className="tab-content">
-                    <div className="form-group">
-                        <label className="form-label">자막 텍스트</label>
-                        <textarea
-                            className="form-input"
-                            placeholder="자막을 입력하세요"
-                            value={newSubtitle.text}
-                            onChange={(e) => setNewSubtitle({ ...newSubtitle, text: e.target.value })}
-                            style={{ minHeight: '60px', resize: 'vertical' }}
-                        />
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                        <div className="form-group" style={{ flex: 1 }}>
-                            <label className="form-label">시작 시간</label>
-                            <input
-                                type="text"
-                                className="form-input"
-                                placeholder="00:00"
-                                value={newSubtitle.startTime}
-                                onChange={(e) => setNewSubtitle({ ...newSubtitle, startTime: e.target.value })}
-                            />
-                        </div>
-                        <div className="form-group" style={{ flex: 1 }}>
-                            <label className="form-label">종료 시간</label>
-                            <input
-                                type="text"
-                                className="form-input"
-                                placeholder="00:05"
-                                value={newSubtitle.endTime}
-                                onChange={(e) => setNewSubtitle({ ...newSubtitle, endTime: e.target.value })}
-                            />
-                        </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                        <div className="form-group" style={{ flex: 1 }}>
-                            <label className="form-label">글자 크기</label>
-                            <input
-                                type="number"
-                                className="form-input"
-                                value={newSubtitle.fontSize}
-                                onChange={(e) => setNewSubtitle({ ...newSubtitle, fontSize: parseInt(e.target.value) || 20 })}
-                                min="12"
-                                max="48"
-                            />
-                        </div>
-                        <div className="form-group" style={{ flex: 1 }}>
-                            <label className="form-label">위치</label>
-                            <select
-                                className="form-select"
-                                value={newSubtitle.position}
-                                onChange={(e) => setNewSubtitle({ ...newSubtitle, position: e.target.value })}
-                            >
-                                <option value="top">상단</option>
-                                <option value="center">중간</option>
-                                <option value="bottom">하단</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">글자 색상</label>
-                        <input
-                            type="color"
-                            className="color-picker"
-                            value={newSubtitle.color}
-                            onChange={(e) => setNewSubtitle({ ...newSubtitle, color: e.target.value })}
-                        />
-                    </div>
-
-                    <div className="checkbox-group">
-                        <input
-                            type="checkbox"
-                            className="checkbox"
-                            checked={newSubtitle.backgroundEnabled}
-                            onChange={(e) => setNewSubtitle({ ...newSubtitle, backgroundEnabled: e.target.checked })}
-                            id="bgCheckbox"
-                        />
-                        <label className="checkbox-label" htmlFor="bgCheckbox">
-                            배경색 사용
-                        </label>
-                    </div>
-
-                    {newSubtitle.backgroundEnabled && (
-                        <div className="form-group">
-                            <label className="form-label">배경 색상</label>
-                            <input
-                                type="color"
-                                className="color-picker"
-                                value={newSubtitle.backgroundColor}
-                                onChange={(e) => setNewSubtitle({ ...newSubtitle, backgroundColor: e.target.value })}
-                            />
-                        </div>
-                    )}
-
-                    <button
-                        className="button-primary"
-                        onClick={handleAddSubtitle}
-                        style={{ width: '100%' }}
-                    >
-                        + 자막 추가
-                    </button>
-
-                    {subtitles.length > 0 && (
-                        <div style={{ marginTop: '12px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <label className="form-label">자막 목록 ({subtitles.length})</label>
-                                <button
-                                    onClick={onClearSubtitles}
-                                    style={{
-                                        background: '#7f1d1d', color: '#fca5a5', border: 'none',
-                                        padding: '3px 10px', borderRadius: '4px', fontSize: '11px',
-                                        cursor: 'pointer', fontWeight: '600',
-                                    }}
-                                >
-                                    전체 삭제
-                                </button>
-                            </div>
-                            <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {subtitles.map((sub, idx) => (
-                                    <div key={idx} className="segment-item">
-                                        <div className="segment-info">
-                                            <div style={{ color: '#e5e5e5' }} title={sub.text}>{sub.text.substring(0, 30)}...</div>
-                                            <div className="segment-times">
-                                                {formatTime(sub.startTime)} - {formatTime(sub.endTime)}
-                                            </div>
-                                        </div>
-                                        <button
-                                            className="delete-button"
-                                            onClick={() => onDeleteSubtitle(idx)}
-                                        >
-                                            삭제
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
-        // AI Tab
-        const AITab = ({ onAnalyze, recommendations, isAnalyzing, onApplyRecommendation, videoRef, onGenerateTitle, onVisionSubtitles, visionSubtitles, isVisionProcessing, onApplyVisionSubtitles, videoFile, visionStage }) => {
-            const [generatingIdx, setGeneratingIdx] = useState(null);
-
-            const handleGenerateTitle = async (idx) => {
-                setGeneratingIdx(idx);
-                await onGenerateTitle(idx);
-                setGeneratingIdx(null);
-            };
-
-            const stageMessages = {
-                'idle': '',
-                'extracting': '프레임 추출 중...',
-                'pass1': '1단계: 영상 전체 맥락 파악 중...',
-                'pass2': '2단계: 스마트 자막 생성 중...',
-                'done': '완료!'
-            };
-
-            return (
-                <div className="tab-content">
-                    {/* Vision 자막 생성 — 핵심 기능 */}
-                    <div style={{
-                        background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%)',
-                        borderRadius: '12px',
-                        padding: '20px',
-                        marginBottom: '16px',
-                        border: '1px solid rgba(139, 92, 246, 0.3)',
-                        boxShadow: '0 4px 20px rgba(99, 102, 241, 0.15)',
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                            <span style={{ fontSize: '20px' }}>🧠</span>
-                            <div style={{ fontWeight: '700', fontSize: '15px', color: '#e0e7ff' }}>
-                                스마트 자막 생성
-                            </div>
-                        </div>
-                        <div style={{ fontSize: '12px', color: '#a5b4fc', marginBottom: '16px', lineHeight: '1.5' }}>
-                            AI가 영상을 2번 분석합니다. 먼저 전체 맥락을 파악하고,
-                            그 다음 장면 전환을 감지해서 센스 있는 자막을 만들어줍니다.
-                        </div>
-
-                        {/* Progress indicator */}
-                        {isVisionProcessing && (
-                            <div style={{
-                                background: 'rgba(255,255,255,0.08)',
-                                borderRadius: '8px',
-                                padding: '12px',
-                                marginBottom: '12px',
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                    <div style={{
-                                        width: '8px', height: '8px', borderRadius: '50%',
-                                        background: '#818cf8',
-                                        animation: 'pulse 1.5s infinite',
-                                    }}></div>
-                                    <span style={{ fontSize: '12px', color: '#c7d2fe', fontWeight: '500' }}>
-                                        {stageMessages[visionStage] || '분석 중...'}
-                                    </span>
-                                </div>
-                                <div style={{
-                                    height: '3px', background: 'rgba(255,255,255,0.1)',
-                                    borderRadius: '2px', overflow: 'hidden',
-                                }}>
-                                    <div style={{
-                                        height: '100%',
-                                        background: 'linear-gradient(90deg, #818cf8, #a78bfa)',
-                                        borderRadius: '2px',
-                                        width: visionStage === 'pass1' ? '30%' : visionStage === 'pass2' ? '70%' : visionStage === 'done' ? '100%' : '10%',
-                                        transition: 'width 0.5s ease',
-                                    }}></div>
-                                </div>
-                            </div>
-                        )}
-
-                        <button
-                            onClick={() => onVisionSubtitles()}
-                            disabled={isVisionProcessing || !videoFile}
-                            style={{
-                                width: '100%', padding: '12px', borderRadius: '8px',
-                                border: 'none', fontWeight: '700', fontSize: '14px',
-                                cursor: isVisionProcessing || !videoFile ? 'not-allowed' : 'pointer',
-                                background: isVisionProcessing ? 'rgba(255,255,255,0.1)'
-                                    : !videoFile ? 'rgba(255,255,255,0.08)'
-                                    : 'linear-gradient(135deg, #818cf8 0%, #a78bfa 100%)',
-                                color: isVisionProcessing || !videoFile ? '#6366f1' : '#fff',
-                                transition: 'all 0.3s ease',
-                                boxShadow: !isVisionProcessing && videoFile ? '0 4px 15px rgba(129, 140, 248, 0.4)' : 'none',
-                                letterSpacing: '0.5px',
-                            }}
-                        >
-                            {isVisionProcessing ? '🔄 AI 분석 진행 중...'
-                                : !videoFile ? '📹 영상을 먼저 업로드하세요'
-                                : '🚀 스마트 자막 생성'}
-                        </button>
-
-                        {!isVisionProcessing && videoFile && (
-                            <div style={{ fontSize: '10px', color: '#6366f1', marginTop: '8px', textAlign: 'center' }}>
-                                2-Pass AI 분석 · 장면 전환 자동 감지 · 센스 있는 코멘트
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Vision 결과 */}
-                    {visionSubtitles.length > 0 && (
-                        <div style={{ marginBottom: '16px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span style={{ fontSize: '14px' }}>✨</span>
-                                    <label className="form-label" style={{ margin: 0, color: '#c4b5fd', fontSize: '13px', fontWeight: '600' }}>
-                                        생성된 자막 ({visionSubtitles.length}개)
-                                    </label>
-                                </div>
-                                <button
-                                    onClick={onApplyVisionSubtitles}
-                                    style={{
-                                        fontSize: '11px', padding: '5px 12px', borderRadius: '6px',
-                                        background: 'linear-gradient(135deg, #059669, #10b981)',
-                                        color: '#fff', border: 'none', cursor: 'pointer',
-                                        fontWeight: '600', transition: 'all 0.2s ease',
-                                    }}
-                                >
-                                    자막 탭에 적용
-                                </button>
-                            </div>
-                            <div style={{
-                                maxHeight: '250px', overflowY: 'auto',
-                                display: 'flex', flexDirection: 'column', gap: '4px',
-                                paddingRight: '4px',
-                            }}>
-                                {visionSubtitles.map((sub, idx) => (
-                                    <div key={idx} style={{
-                                        background: '#1a1a2e', borderRadius: '8px',
-                                        padding: '10px 12px', fontSize: '12px',
-                                        borderLeft: '3px solid #6366f1',
-                                        transition: 'background 0.2s ease',
-                                    }}>
-                                        <div style={{
-                                            color: '#818cf8', fontSize: '10px', marginBottom: '3px',
-                                            fontFamily: "'Courier New', monospace", fontWeight: '600',
-                                        }}>
-                                            {formatTime(sub.start)} → {formatTime(sub.end)}
-                                        </div>
-                                        <div style={{ color: '#e2e8f0', lineHeight: '1.4' }}>{sub.text}</div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    <div style={{ borderTop: '1px solid #2a2a3a', paddingTop: '12px' }}>
-                        <label className="form-label" style={{ fontSize: '11px', color: '#4b5563' }}>기타 AI 기능</label>
-                    </div>
-
-                    <button
-                        className="button-primary"
-                        onClick={onAnalyze}
-                        disabled={isAnalyzing}
-                        style={{ width: '100%' }}
-                    >
-                        {isAnalyzing ? '분석 중...' : 'AI 하이라이트 분석'}
-                    </button>
-
-                    {recommendations.length > 0 && (
-                        <div>
-                            <label className="form-label">추천 하이라이트</label>
-                            <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {recommendations.map((rec, idx) => (
-                                    <div key={idx} className="ai-recommendation" onClick={() => onApplyRecommendation(idx)}>
-                                        <div className="recommendation-title">{rec.title || `하이라이트 ${idx + 1}`}</div>
-                                        <div className="recommendation-times">
-                                            {formatTime(rec.start)} - {formatTime(rec.end)} ({formatTime(rec.end - rec.start)})
-                                        </div>
-                                        <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
-                                            신뢰도: {(rec.confidence * 100).toFixed(0)}%
-                                        </div>
-                                        <button
-                                            className="button-secondary"
-                                            onClick={(e) => { e.stopPropagation(); handleGenerateTitle(idx); }}
-                                            disabled={generatingIdx === idx}
-                                            style={{ width: '100%', marginTop: '8px', fontSize: '12px' }}
-                                        >
-                                            {generatingIdx === idx ? '생성 중...' : '타이틀 생성'}
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {!isAnalyzing && recommendations.length === 0 && !isVisionProcessing && visionSubtitles.length === 0 && (
-                        <div style={{ color: '#4b5563', fontSize: '12px', textAlign: 'center', padding: '20px' }}>
-                            영상을 업로드하고 AI 기능을 사용해보세요
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
-        // Export Tab
-        const ExportTab = ({ onExport, isExporting, exportProgress, hasVideo, subtitleCount, exportResult }) => {
-            const [format, setFormat] = useState('horizontal');
-            const [quality, setQuality] = useState('1080p');
-
-            return (
-                <div className="tab-content">
-                    {/* 다운로드 링크 (내보내기 완료 시) */}
-                    {exportResult && (
-                        <div style={{
-                            background: 'linear-gradient(135deg, #064e3b, #065f46)',
-                            borderRadius: '10px', padding: '16px',
-                            border: '1px solid #10b981', marginBottom: '8px',
-                        }}>
-                            <div style={{ fontSize: '14px', color: '#6ee7b7', fontWeight: '700', marginBottom: '8px' }}>
-                                내보내기 완료!
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#a7f3d0', marginBottom: '12px' }}>
-                                {exportResult.filename}
-                            </div>
-                            <a
-                                href={exportResult.downloadUrl}
-                                download={exportResult.filename}
-                                style={{
-                                    display: 'block', textAlign: 'center',
-                                    background: '#10b981', color: '#fff',
-                                    padding: '10px', borderRadius: '8px',
-                                    textDecoration: 'none', fontWeight: '700',
-                                    fontSize: '14px',
-                                }}
-                            >
-                                📥 다운로드
-                            </a>
-                        </div>
-                    )}
-
-                    {/* 내보내기 요약 */}
-                    <div style={{
-                        background: '#1a1a2e', borderRadius: '8px', padding: '12px',
-                        border: '1px solid #2a2a3a', marginBottom: '4px',
-                    }}>
-                        <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '6px' }}>내보내기 정보</div>
-                        <div style={{ fontSize: '13px', color: '#e5e5e5', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <div>📹 영상: {hasVideo ? '준비됨' : '없음'}</div>
-                            <div>💬 자막: {subtitleCount > 0 ? `${subtitleCount}개 (자동 입힘)` : '없음'}</div>
-                        </div>
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">형식</label>
-                        <select
-                            className="form-select"
-                            value={format}
-                            onChange={(e) => setFormat(e.target.value)}
-                            disabled={isExporting}
-                        >
-                            <option value="horizontal">가로 (16:9)</option>
-                            <option value="vertical">세로 (9:16)</option>
-                            <option value="both">둘 다</option>
-                        </select>
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">품질</label>
-                        <select
-                            className="form-select"
-                            value={quality}
-                            onChange={(e) => setQuality(e.target.value)}
-                            disabled={isExporting}
-                        >
-                            <option value="720p">720p</option>
-                            <option value="1080p">1080p</option>
-                            <option value="4k">4K</option>
-                        </select>
-                    </div>
-
-                    {isExporting && (
-                        <div className="form-group">
-                            <label className="form-label">내보내기 진행률</label>
-                            <div style={{
-                                height: '6px', background: '#2a2a3a', borderRadius: '3px', overflow: 'hidden',
-                            }}>
-                                <div style={{
-                                    height: '100%', borderRadius: '3px',
-                                    background: 'linear-gradient(90deg, #6366f1, #a78bfa)',
-                                    width: `${exportProgress}%`,
-                                    transition: 'width 0.5s ease',
-                                }}></div>
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#a78bfa', marginTop: '6px', textAlign: 'center' }}>
-                                {exportProgress < 30 ? '자막 입히는 중...'
-                                    : exportProgress < 80 ? '영상 인코딩 중...'
-                                    : exportProgress < 100 ? '마무리 중...'
-                                    : '완료!'
-                                } ({exportProgress}%)
-                            </div>
-                        </div>
-                    )}
-
-                    <button
-                        className="button-primary"
-                        onClick={() => onExport({ format, quality })}
-                        disabled={isExporting || !hasVideo}
-                        style={{ width: '100%' }}
-                    >
-                        {isExporting ? '내보내는 중...' : !hasVideo ? '영상을 먼저 업로드하세요' : subtitleCount > 0 ? `자막 포함 내보내기 (${subtitleCount}개)` : '내보내기'}
-                    </button>
-                </div>
-            );
-        };
-
-        // Timeline Component
-        const Timeline = ({ segments, duration, videoRef, onSeek, zoom }) => {
-            const timelineRef = useRef(null);
-            const [playheadPos, setPlayheadPos] = useState(0);
-
-            const pixelsPerSecond = 50 * zoom;
-            const totalWidth = Math.max((duration || 0) * pixelsPerSecond, 400);
-
-            useEffect(() => {
-                const updatePlayhead = () => {
-                    if (videoRef.current) {
-                        setPlayheadPos(videoRef.current.currentTime * pixelsPerSecond);
-                    }
-                };
-
-                const video = videoRef.current;
-                if (video) {
-                    video.addEventListener('timeupdate', updatePlayhead);
-                    return () => video.removeEventListener('timeupdate', updatePlayhead);
-                }
-            }, [pixelsPerSecond, videoRef]);
-
-            const handleTimelineClick = (e) => {
-                if (!timelineRef.current || !duration) return;
-                const rect = timelineRef.current.getBoundingClientRect();
-                const scrollLeft = timelineRef.current.scrollLeft;
-                const x = e.clientX - rect.left + scrollLeft;
-                const time = x / pixelsPerSecond;
-                onSeek(Math.max(0, Math.min(time, duration)));
-            };
-
-            return (
-                <div className="timeline" ref={timelineRef} onClick={handleTimelineClick}>
-                    <div className="timeline-track" style={{ width: `${totalWidth}px` }}>
-                        {segments.map((seg, idx) => (
-                            <div
-                                key={idx}
-                                className="timeline-segment"
-                                style={{
-                                    left: `${seg.start * pixelsPerSecond}px`,
-                                    width: `${(seg.end - seg.start) * pixelsPerSecond}px`
-                                }}
-                                title={`${formatTime(seg.start)} - ${formatTime(seg.end)}`}
-                            />
-                        ))}
-                        <div
-                            className="playhead"
-                            style={{ left: `${playheadPos}px` }}
-                        />
-                    </div>
-                </div>
-            );
-        };
-
-        // Main App Component
-        const App = () => {
-            const videoRef = useRef(null);
-            const [videoFile, setVideoFile] = useState(null);
-            const [videoDuration, setVideoDuration] = useState(0);
-            const [currentTime, setCurrentTime] = useState(0);
-            const [isPlaying, setIsPlaying] = useState(false);
-
-            const [segments, setSegments] = useState([]);
-            const [subtitles, setSubtitles] = useState([]);
-            const [recommendations, setRecommendations] = useState([]);
-
-            const [activeTab, setActiveTab] = useState('edit');
-            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-            const [settings, setSettings] = useState({
-                aiProvider: 'claude',
-                apiKey: '',
-                serverUrl: 'http://localhost:9000'
-            });
-
-            const [isAnalyzing, setIsAnalyzing] = useState(false);
-            const [isExporting, setIsExporting] = useState(false);
-            const [exportProgress, setExportProgress] = useState(0);
-            const [zoom, setZoom] = useState(1);
-
-            // Vision AI states
-            const [visionSubtitles, setVisionSubtitles] = useState([]);
-            const [isVisionProcessing, setIsVisionProcessing] = useState(false);
-            const [visionStage, setVisionStage] = useState('idle');
-            const [uploadedFilePath, setUploadedFilePath] = useState(null);
-
-            const [toast, setToast] = useState(null);
-            const [dragOver, setDragOver] = useState(false);
-
-            const showToast = (message, type = 'info') => {
-                setToast({ message, type });
-            };
-
-            const handleDragOver = (e) => {
-                e.preventDefault();
-                setDragOver(true);
-            };
-
-            const handleDragLeave = () => {
-                setDragOver(false);
-            };
-
-            const handleDrop = (e) => {
-                e.preventDefault();
-                setDragOver(false);
-                const file = e.dataTransfer.files[0];
-                if (file && file.type.startsWith('video/')) {
-                    loadVideo(file);
-                }
-            };
-
-            const handleFileSelect = (e) => {
-                const file = e.target.files[0];
-                if (file && file.type.startsWith('video/')) {
-                    loadVideo(file);
-                }
-            };
-
-            const loadVideo = async (file) => {
-                const url = URL.createObjectURL(file);
-                setVideoFile({ name: file.name, url, file });
-                if (videoRef.current) {
-                    videoRef.current.src = url;
-                }
-                showToast('비디오 로드됨: ' + file.name);
-
-                // Upload to server for backend processing
-                try {
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    const response = await fetch(`${settings.serverUrl}/api/upload`, {
-                        method: 'POST',
-                        body: formData,
-                    });
-                    if (response.ok) {
-                        const data = await response.json();
-                        setUploadedFilePath(data.file_path);
-                        showToast('서버 업로드 완료', 'success');
-                    }
-                } catch (err) {
-                    console.log('Server upload skipped:', err.message);
-                }
-            };
-
-            // Vision AI 스마트 자막 생성 (2-Pass)
-            const handleVisionSubtitles = async () => {
-                if (!uploadedFilePath) {
-                    showToast('영상을 먼저 업로드하세요', 'error');
-                    return;
-                }
-
-                // 비용 추정 (영상 길이 기반)
-                const estimatedFrames = Math.ceil((videoDuration || 60) / 2);
-                const estimatedCalls = 1 + Math.ceil(estimatedFrames / 6); // pass1 + pass2 batches
-                const estimatedCost = (estimatedCalls * 0.025).toFixed(2);
-
-                if (!confirm(
-                    `스마트 자막 생성을 시작합니다.\n\n` +
-                    `예상 프레임: ${estimatedFrames}장 (2초 간격)\n` +
-                    `예상 API 호출: ${estimatedCalls}회\n` +
-                    `예상 비용: ~$${estimatedCost}\n\n` +
-                    `진행하시겠습니까?`
-                )) {
-                    return;
-                }
-
-                setIsVisionProcessing(true);
-                setVisionStage('extracting');
-                try {
-                    const response = await fetch(`${settings.serverUrl}/api/ai/vision-subtitles`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            file_path: uploadedFilePath,
-                        }),
-                    });
-                    const data = await response.json();
-                    if (data.success) {
-                        setVisionStage('done');
-                        setVisionSubtitles(data.subtitles);
-                        showToast(data.message, 'success');
-                    } else {
-                        showToast(data.detail || 'Vision 분석 실패', 'error');
-                    }
-                } catch (err) {
-                    showToast('Vision AI 연결 실패: ' + err.message, 'error');
-                } finally {
-                    setTimeout(() => {
-                        setIsVisionProcessing(false);
-                        setVisionStage('idle');
-                    }, 1500);
-                }
-            };
-
-            // Vision 자막을 자막 탭에 적용 (기존 자막 덮어쓰기 — 중복 방지)
-            const handleApplyVisionSubtitles = () => {
-                const newSubtitles = visionSubtitles.map(sub => ({
-                    text: sub.text,
-                    startTime: sub.start,
-                    endTime: sub.end,
-                    fontSize: 20,
-                    color: '#ffffff',
-                    position: 'bottom',
-                    backgroundColor: '#000000',
-                    backgroundEnabled: true,
-                }));
-                setSubtitles(newSubtitles);  // replace, not append
-                setActiveTab('subtitle');
-                showToast(`${newSubtitles.length}개 자막 적용됨 (기존 자막 교체)`, 'success');
-            };
-
-            // 자막 전체 삭제
-            const handleClearSubtitles = () => {
-                setSubtitles([]);
-                setVisionSubtitles([]);
-                showToast('자막 전체 삭제됨');
-            };
-
-            // 앱 시작 시 서버에서 AI 설정 + 업로드된 영상 목록 자동 로드
-            useEffect(() => {
-                const loadInitialData = async () => {
-                    // 1) AI 설정 불러오기
-                    try {
-                        const res = await fetch(`${settings.serverUrl}/api/ai/settings`);
-                        const data = await res.json();
-                        if (data.success && data.settings.api_key_set) {
-                            setSettings(prev => ({
-                                ...prev,
-                                aiProvider: data.settings.provider,
-                                model: data.settings.model,
-                            }));
-                        }
-                    } catch (e) { /* server not ready yet */ }
-
-                    // 2) 업로드된 영상 + 저장된 자막 불러오기
-                    try {
-                        const res = await fetch(`${settings.serverUrl}/api/uploads`);
-                        const data = await res.json();
-                        if (data.files && data.files.length > 0) {
-                            const latest = data.files[0];
-                            setUploadedFilePath(latest.path);
-                            const videoUrl = `${settings.serverUrl}/api/uploads/${latest.filename}`;
-                            setVideoFile({ name: latest.filename, url: videoUrl });
-
-                            // 저장된 자막이 있으면 자동 로드
-                            if (latest.subtitles && latest.subtitles.length > 0) {
-                                setVisionSubtitles(latest.subtitles);
-                                // 자막 탭에도 자동 적용
-                                const loadedSubs = latest.subtitles.map(sub => ({
-                                    text: sub.text,
-                                    startTime: sub.start,
-                                    endTime: sub.end,
-                                    fontSize: 20,
-                                    color: '#ffffff',
-                                    position: 'bottom',
-                                    backgroundColor: '#000000',
-                                    backgroundEnabled: true,
-                                }));
-                                setSubtitles(loadedSubs);
-                            }
-                        }
-                    } catch (e) { /* no uploads yet */ }
-                };
-                loadInitialData();
-            }, []);
-
-            const handlePlay = () => {
-                if (videoRef.current) {
-                    if (isPlaying) {
-                        videoRef.current.pause();
-                        setIsPlaying(false);
-                    } else {
-                        videoRef.current.play();
-                        setIsPlaying(true);
-                    }
-                }
-            };
-
-            const handleLoadedMetadata = () => {
-                if (videoRef.current) {
-                    setVideoDuration(videoRef.current.duration);
-                }
-            };
-
-            const handleTimeUpdate = () => {
-                if (videoRef.current) {
-                    setCurrentTime(videoRef.current.currentTime);
-                }
-            };
-
-            const handleSeek = (time) => {
-                if (videoRef.current) {
-                    videoRef.current.currentTime = time;
-                }
-            };
-
-            const handleAddSegment = (segment) => {
-                setSegments([...segments, segment]);
-                showToast('구간이 추가되었습니다');
-            };
-
-            const handleDeleteSegment = (idx) => {
-                setSegments(segments.filter((_, i) => i !== idx));
-                showToast('구간이 삭제되었습니다');
-            };
-
-            const handleAddSubtitle = (subtitle) => {
-                setSubtitles([...subtitles, subtitle]);
-                showToast('자막이 추가되었습니다');
-            };
-
-            const handleDeleteSubtitle = (idx) => {
-                setSubtitles(subtitles.filter((_, i) => i !== idx));
-                showToast('자막이 삭제되었습니다');
-            };
-
-            const handleAnalyze = async () => {
-                if (!videoFile) {
-                    showToast('먼저 비디오를 업로드하세요', 'error');
-                    return;
-                }
-
-                setIsAnalyzing(true);
-                try {
-                    const response = await fetch(`${settings.serverUrl}/api/ai/analyze`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            videoPath: videoFile.url,
-                            provider: settings.aiProvider,
-                            apiKey: settings.apiKey
-                        })
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        setRecommendations(data.highlights || []);
-                        showToast('분석 완료');
-                    } else {
-                        showToast('분석 실패', 'error');
-                    }
-                } catch (error) {
-                    showToast('오류: ' + error.message, 'error');
-                } finally {
-                    setIsAnalyzing(false);
-                }
-            };
-
-            const handleApplyRecommendation = (idx) => {
-                const rec = recommendations[idx];
-                if (rec) {
-                    handleAddSegment({ start: rec.start, end: rec.end });
-                }
-            };
-
-            const handleGenerateTitle = async (idx) => {
-                const rec = recommendations[idx];
-                if (!rec) return;
-
-                try {
-                    const response = await fetch(`${settings.serverUrl}/api/ai/generate-title`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            segment: rec,
-                            provider: settings.aiProvider,
-                            apiKey: settings.apiKey
-                        })
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        const updated = [...recommendations];
-                        updated[idx].title = data.title;
-                        setRecommendations(updated);
-                        showToast('타이틀 생성됨');
-                    }
-                } catch (error) {
-                    showToast('타이틀 생성 실패', 'error');
-                }
-            };
-
-            const handleCut = async () => {
-                if (segments.length === 0) {
-                    showToast('구간을 선택하세요', 'error');
-                    return;
-                }
-                if (!uploadedFilePath) {
-                    showToast('영상을 먼저 업로드하세요', 'error');
-                    return;
-                }
-
-                setIsExporting(true);
-                setExportProgress(0);
-
-                try {
-                    const response = await fetch(`${settings.serverUrl}/api/cut`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            file_path: uploadedFilePath,
-                            segments: segments.map(s => ({ start: s.start, end: s.end })),
-                        })
-                    });
-
-                    const data = await response.json();
-                    if (data.success) {
-                        showToast('구간 잘라내기 완료!', 'success');
-                    } else {
-                        showToast(data.detail || '잘라내기 실패', 'error');
-                    }
-                } catch (error) {
-                    showToast('오류: ' + error.message, 'error');
-                } finally {
-                    setIsExporting(false);
-                    setExportProgress(0);
-                }
-            };
-
-            // 내보내기 결과 (다운로드 링크)
-            const [exportResult, setExportResult] = useState(null);
-
-            const handleExport = async (options) => {
-                if (!uploadedFilePath) {
-                    showToast('영상을 먼저 업로드하세요', 'error');
-                    return;
-                }
-
-                setIsExporting(true);
-                setExportProgress(5);
-                setExportResult(null);
-
-                try {
-                    let targetFilePath = uploadedFilePath;
-
-                    // Step 1: 자막이 있으면 먼저 자막 입히기
-                    if (subtitles.length > 0) {
-                        setExportProgress(15);
-
-                        const burnResponse = await fetch(`${settings.serverUrl}/api/subtitle`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                file_path: uploadedFilePath,
-                                subtitles: subtitles.map(s => ({
-                                    start: s.startTime,
-                                    end: s.endTime,
-                                    text: s.text,
-                                })),
-                            })
-                        });
-
-                        const burnData = await burnResponse.json();
-                        if (burnData.success && burnData.output_path) {
-                            targetFilePath = burnData.output_path;
-                            setExportProgress(45);
-                        } else {
-                            showToast('자막 입히기 실패: ' + (burnData.detail || ''), 'error');
-                            setIsExporting(false);
-                            return;
-                        }
-                    }
-
-                    // Step 2: 내보내기 (포맷 변환 + 품질 설정)
-                    setExportProgress(55);
-
-                    const exportResponse = await fetch(`${settings.serverUrl}/api/export`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            file_path: targetFilePath,
-                            format: options.format,
-                            quality: options.quality === '4k' ? 'high' : options.quality === '1080p' ? 'medium' : 'low',
-                        })
-                    });
-
-                    const exportData = await exportResponse.json();
-                    setExportProgress(100);
-
-                    if (exportData.success && exportData.output_path) {
-                        const filename = exportData.output_path.replace(/\\/g, '/').split('/').pop();
-                        setExportResult({
-                            filename: filename,
-                            downloadUrl: `${settings.serverUrl}/api/download/${filename}`,
-                        });
-                        showToast('내보내기 완료!', 'success');
-                    } else {
-                        showToast('내보내기 실패: ' + (exportData.detail || ''), 'error');
-                    }
-                } catch (error) {
-                    showToast('오류: ' + error.message, 'error');
-                } finally {
-                    setTimeout(() => {
-                        setIsExporting(false);
-                    }, 1000);
-                }
-            };
-
-            return (
-                <div className="app-container">
-                    <header className="header">
-                        <div className="header-title">CutSense</div>
-                        <button
-                            className="header-button"
-                            onClick={() => setIsSettingsOpen(true)}
-                        >
-                            ⚙️ AI 설정
-                        </button>
-                    </header>
-
-                    <div className="main-content">
-                        <div className="left-panel">
-                            <div className="video-container">
-                                {!videoFile ? (
-                                    <div
-                                        className={`drop-zone ${dragOver ? 'dragover' : ''}`}
-                                        onDragOver={handleDragOver}
-                                        onDragLeave={handleDragLeave}
-                                        onDrop={handleDrop}
-                                        onClick={() => document.getElementById('fileInput').click()}
-                                    >
-                                        <div style={{ fontSize: '24px' }}>📹</div>
-                                        <div className="drop-zone-text">
-                                            비디오 파일을 드래그하거나 클릭하여 업로드
-                                        </div>
-                                        <input
-                                            id="fileInput"
-                                            type="file"
-                                            accept="video/*"
-                                            onChange={handleFileSelect}
-                                            style={{ display: 'none' }}
-                                        />
-                                    </div>
-                                ) : (
-                                    <div style={{ position: 'relative', width: '100%' }}>
-                                        <video
-                                            ref={videoRef}
-                                            className="video-player"
-                                            src={videoFile?.url}
-                                            controls
-                                            onLoadedMetadata={handleLoadedMetadata}
-                                            onTimeUpdate={handleTimeUpdate}
-                                            onEnded={() => setIsPlaying(false)}
-                                            onPlay={() => setIsPlaying(true)}
-                                            onPause={() => setIsPlaying(false)}
-                                        />
-                                        {/* 자막 실시간 오버레이 */}
-                                        {(() => {
-                                            const activeSub = subtitles.find(s =>
-                                                currentTime >= s.startTime && currentTime <= s.endTime
-                                            );
-                                            if (!activeSub) return null;
-                                            return (
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    bottom: '60px',
-                                                    left: '50%',
-                                                    transform: 'translateX(-50%)',
-                                                    background: 'linear-gradient(135deg, rgba(15,15,30,0.9), rgba(30,20,50,0.85))',
-                                                    backdropFilter: 'blur(8px)',
-                                                    color: activeSub.color || '#f0f0f0',
-                                                    fontSize: `${activeSub.fontSize || 18}px`,
-                                                    fontWeight: '500',
-                                                    padding: '8px 20px',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid rgba(139, 92, 246, 0.3)',
-                                                    maxWidth: '85%',
-                                                    textAlign: 'center',
-                                                    pointerEvents: 'none',
-                                                    zIndex: 10,
-                                                    fontFamily: '"Pretendard Variable", "Pretendard", sans-serif',
-                                                    letterSpacing: '0.3px',
-                                                    lineHeight: '1.4',
-                                                    boxShadow: '0 4px 15px rgba(0,0,0,0.5)',
-                                                    textShadow: '0 1px 3px rgba(0,0,0,0.5)',
-                                                }}>
-                                                    {activeSub.text}
-                                                </div>
-                                            );
-                                        })()}
-                                    </div>
-                                )}
-                            </div>
-
-                            {videoFile && (
-                                <div className="controls">
-                                    <button
-                                        className="control-button primary"
-                                        onClick={handlePlay}
-                                    >
-                                        {isPlaying ? '⏸️ 일시정지' : '▶️ 재생'}
-                                    </button>
-                                    <div className="time-display">
-                                        {formatTime(currentTime)} / {formatTime(videoDuration)}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="right-panel">
-                            <div className="tab-header">
-                                <button
-                                    className={`tab-button ${activeTab === 'edit' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('edit')}
-                                >
-                                    편집
-                                </button>
-                                <button
-                                    className={`tab-button ${activeTab === 'subtitle' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('subtitle')}
-                                >
-                                    자막
-                                </button>
-                                <button
-                                    className={`tab-button ${activeTab === 'ai' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('ai')}
-                                >
-                                    AI
-                                </button>
-                                <button
-                                    className={`tab-button ${activeTab === 'export' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('export')}
-                                >
-                                    내보내기
-                                </button>
-                            </div>
-
-                            {activeTab === 'edit' && (
-                                <EditTab
-                                    segments={segments}
-                                    videoRef={videoRef}
-                                    onAddSegment={handleAddSegment}
-                                    onDeleteSegment={handleDeleteSegment}
-                                    onCut={handleCut}
-                                    hasVideo={!!videoFile}
-                                    duration={videoDuration}
-                                />
-                            )}
-
-                            {activeTab === 'subtitle' && (
-                                <SubtitleTab
-                                    subtitles={subtitles}
-                                    onAddSubtitle={handleAddSubtitle}
-                                    onUpdateSubtitle={() => {}}
-                                    onDeleteSubtitle={handleDeleteSubtitle}
-                                    onApplySubtitles={() => {}}
-                                    onClearSubtitles={handleClearSubtitles}
-                                    videoRef={videoRef}
-                                />
-                            )}
-
-                            {activeTab === 'ai' && (
-                                <AITab
-                                    onAnalyze={handleAnalyze}
-                                    recommendations={recommendations}
-                                    isAnalyzing={isAnalyzing}
-                                    onApplyRecommendation={handleApplyRecommendation}
-                                    videoRef={videoRef}
-                                    onGenerateTitle={handleGenerateTitle}
-                                    onVisionSubtitles={handleVisionSubtitles}
-                                    visionSubtitles={visionSubtitles}
-                                    isVisionProcessing={isVisionProcessing}
-                                    onApplyVisionSubtitles={handleApplyVisionSubtitles}
-                                    videoFile={videoFile}
-                                    visionStage={visionStage}
-                                />
-                            )}
-
-                            {activeTab === 'export' && (
-                                <ExportTab
-                                    onExport={handleExport}
-                                    isExporting={isExporting}
-                                    exportProgress={exportProgress}
-                                    hasVideo={!!videoFile}
-                                    subtitleCount={subtitles.length}
-                                    exportResult={exportResult}
-                                />
-                            )}
-                        </div>
-                    </div>
-
-                    {videoFile && videoDuration > 0 && (
-                        <div className="timeline-container">
-                            <div className="timeline-controls">
-                                <div className="timeline-zoom">
-                                    <button
-                                        className="zoom-button"
-                                        onClick={() => setZoom(Math.max(0.5, zoom - 0.5))}
-                                    >
-                                        −
-                                    </button>
-                                    <span style={{ fontSize: '12px', color: '#9ca3af', width: '40px', textAlign: 'center' }}>
-                                        {(zoom * 100).toFixed(0)}%
-                                    </span>
-                                    <button
-                                        className="zoom-button"
-                                        onClick={() => setZoom(Math.min(3, zoom + 0.5))}
-                                    >
-                                        +
-                                    </button>
-                                </div>
-                            </div>
-                            <Timeline
-                                segments={segments}
-                                duration={videoDuration}
-                                videoRef={videoRef}
-                                onSeek={handleSeek}
-                                zoom={zoom}
-                            />
-                        </div>
-                    )}
-
-                    <SettingsModal
-                        isOpen={isSettingsOpen}
-                        onClose={() => setIsSettingsOpen(false)}
-                        settings={settings}
-                        onSettingsChange={setSettings}
-                    />
-
-                    {toast && (
-                        <Toast
-                            message={toast.message}
-                            type={toast.type}
-                            onClose={() => setToast(null)}
-                        />
-                    )}
-                </div>
-            );
-        };
-
-        ReactDOM.render(<App />, document.getElementById('root'));
+        }
     </script>
 </body>
 </html>

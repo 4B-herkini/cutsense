@@ -19,7 +19,10 @@
 ## 기술 스택
 
 - **백엔드**: FastAPI (Python 3.10+), uvicorn
-- **프론트엔드**: React 18 (CDN, 싱글 HTML 파일), Babel standalone, Tailwind CSS CDN
+- **프론트엔드**: React 18 (CDN), Babel standalone (컴포넌트 외부 파일 로딩), Tailwind CSS CDN
+- **UI 테마**: Android Studio Darcula (#2B2B2B, #3C3F41, #CC7832, #A9B7C6)
+- **폰트**: Happiness Sans (현대 해피니스 산스, CDN woff2)
+- **PWA**: manifest.json + Service Worker → 크롬 설치 가능
 - **영상 처리**: FFmpeg (subprocess 직접 호출, Windows 호환)
 - **AI**: Anthropic Claude Vision API (2-Pass 분석) / xAI Grok Vision API
 - **포트**: 9000 (8000은 AITM 프로젝트가 선점)
@@ -37,7 +40,20 @@ cutsense/
 │   ├── video_processor.py   # FFmpeg 영상 처리 (subprocess)
 │   └── requirements.txt     # >= 버전 핀닝
 ├── frontend/
-│   └── index.html           # React 싱글 파일 (~2,100줄, 다크 UI)
+│   ├── index.html           # 메인 셸 (~370줄, CSS + 컴포넌트 로딩)
+│   ├── manifest.json        # PWA 매니페스트
+│   ├── sw.js                # Service Worker (network-first)
+│   ├── icons/               # PWA 아이콘 (192x192, 512x512)
+│   └── components/          # React 컴포넌트 (Babel standalone)
+│       ├── App.js           # 메인 앱 (~693줄, 상태 관리 + 핸들러)
+│       ├── MenuBar.js       # 풀다운 메뉴바 (파일/편집/보기/AI/도움말)
+│       ├── EditTab.js       # ✂️ 편집 탭
+│       ├── SubtitleTab.js   # 💬 자막 탭
+│       ├── AITab.js         # 🤖 AI 탭
+│       ├── ExportTab.js     # 📦 내보내기 탭
+│       ├── Timeline.js      # 타임라인 컴포넌트
+│       ├── SettingsModal.js # 설정 모달
+│       └── Toast.js         # 토스트 알림
 ├── uploads/                 # 업로드 영상 + 자막 JSON + 내보내기 결과
 ├── projects/                # 프로젝트 저장 (JSON)
 ├── code-review/             # 타 AI 검증용 소스 복사본 + 리뷰 결과
@@ -82,9 +98,16 @@ cutsense/
 ### 비용 추가 최적화 (미적용)
 6. FFmpeg Scene Detection (`select='gt(scene,0.3)'`)으로 장면 전환 프레임만 추출 → API 80% 절감 가능 (향후)
 
-### 향후 구조 개선
-7. 프론트엔드 모듈화 — Vite + React 컴포넌트 분리 (기능 추가 시 전환)
-8. 10분+ 대용량 영상 대응 — extract_frames 일괄 추출 방식 전환
+### ✅ 구조 개선 완료
+7. ~~프론트엔드 모듈화~~ → Babel standalone 외부 파일 로딩으로 10개 파일 분리 완료
+8. ~~Android Studio Darcula 테마~~ → 전체 UI 색상 변환 완료
+9. ~~PWA 설정~~ → manifest.json + sw.js + 아이콘 완료
+10. ~~풀다운 메뉴바~~ → 파일/편집/보기/AI/도움말 5개 메뉴 완료
+11. ~~Happiness Sans 폰트~~ → CDN woff2 적용 완료
+
+### 향후 개선
+12. 십자선 4분할 인터랙션 — 4영역 × 마우스 이벤트 = 8개 명령 매핑 (기획 중)
+13. 10분+ 대용량 영상 대응 — extract_frames 일괄 추출 방식 전환
 
 ---
 
@@ -104,7 +127,8 @@ cutsense/
 - 포트: 9000 고정 (8000은 AITM)
 
 ### 파일별 수정 시 주의사항
-- **index.html**: ~2,100줄 싱글 파일. 수정 시 다른 컴포넌트 깨뜨리지 않도록 주의
+- **index.html**: ~370줄 셸 파일. CSS 테마 + 컴포넌트 로딩만 담당
+- **components/*.js**: Babel standalone 외부 로딩, import/export 없이 전역 함수로 작성
 - **ai_service.py**: 2-Pass 프롬프트 수정 시 비용 영향 반드시 계산
 - **video_processor.py**: subprocess 호출, Windows 경로, timeout 설정 확인
 - **main.py**: Generator 패턴 (StopIteration.value), 새 엔드포인트 추가 시 CORS 확인
@@ -139,3 +163,7 @@ cutsense/
 | 2026-03-23 | 내보내기 플로우 6개 버그 수정 (URL, 경로, Generator 등) |
 | 2026-03-23 | 타 AI 크로스 리뷰 (Opus + Gemini) → 추가 이슈 5건 확인 |
 | 2026-03-23 | 리뷰 기반 보안/성능 패치 6건 적용 (eval, Path Traversal, threadpool, SRT, 3초 간격) |
+| 2026-03-23 | PWA 설정 (manifest, sw.js, 아이콘) |
+| 2026-03-23 | 프론트엔드 모듈화 — 2,100줄 → 10개 컴포넌트 파일 분리 |
+| 2026-03-23 | Android Studio Darcula 테마 + Happiness Sans 폰트 적용 |
+| 2026-03-23 | 풀다운 메뉴바 (파일/편집/보기/AI/도움말) + 상태바 추가 |

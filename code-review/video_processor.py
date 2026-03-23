@@ -76,7 +76,13 @@ class VideoProcessor:
             duration = float(probe["format"].get("duration", 0))
             width = int(video_stream.get("width", 0))
             height = int(video_stream.get("height", 0))
-            fps = eval(video_stream.get("r_frame_rate", "30/1"))
+            # eval() 제거 — 보안 취약점 (Opus 리뷰 지적)
+            rate = video_stream.get("r_frame_rate", "30/1")
+            if "/" in rate:
+                num, den = map(int, rate.split("/"))
+                fps = num / den if den else 30.0
+            else:
+                fps = float(rate)
             codec = video_stream.get("codec_name", "unknown")
             file_size = int(probe["format"].get("size", 0))
 
@@ -234,11 +240,10 @@ class VideoProcessor:
                 f"{Path(path).stem}_subtitled.mp4",
             )
 
-            # Create SRT file from subtitles
-            srt_path = os.path.join(
-                self.uploads_dir,
-                f"{Path(path).stem}_subs.srt",
-            )
+            # SRT를 temp 경로에 생성 (공백/한글 경로 문제 방지 — Opus 리뷰)
+            import tempfile
+            srt_fd, srt_path = tempfile.mkstemp(suffix=".srt", prefix="cutsense_")
+            os.close(srt_fd)
 
             with open(srt_path, "w", encoding="utf-8") as f:
                 for i, sub in enumerate(subtitles, 1):
@@ -253,32 +258,27 @@ class VideoProcessor:
                 "message": "자막 입히는 중...",
             }
 
-            # ── Windows-safe: SRT 경로의 백슬래시/콜론을 FFmpeg용으로 변환 ──
-            # FFmpeg subtitles filter (libass) treats : and \ as special chars
+            # Windows-safe: 경로를 forward slash로 + 콜론 이스케이프 (FFmpeg libass용)
             srt_escaped = srt_path.replace("\\", "/").replace(":", "\\:")
-
-            # ── 실제로 subtitle_filter를 빌드하고 사용 ──
-            font_file = self._get_font_path(style.font)
-            font_escaped = font_file.replace("\\", "/").replace(":", "\\:")
 
             # ASS style string for subtitle formatting
             force_style = (
                 f"FontName=Arial,"
                 f"FontSize={style.size},"
-                f"PrimaryColour=&H00FFFFFF,"  # white
-                f"OutlineColour=&H00000000,"  # black outline
-                f"BorderStyle=3,"  # opaque box
+                f"PrimaryColour=&H00FFFFFF,"
+                f"OutlineColour=&H00000000,"
+                f"BorderStyle=3,"
                 f"Outline=1,"
                 f"Shadow=0,"
                 f"MarginV=30,"
                 f"Bold=1"
             )
 
-            # subprocess로 직접 실행 (ffmpeg-python의 filter가 Windows에서 불안정)
+            # subprocess list mode — 따옴표 없이 (Gemini 리뷰: shell=False에서 quote 불필요)
             cmd = [
                 "ffmpeg", "-y",
                 "-i", path,
-                "-vf", f"subtitles='{srt_escaped}':force_style='{force_style}'",
+                "-vf", f"subtitles={srt_escaped}:force_style={force_style}",
                 "-c:v", "libx264", "-crf", "23",
                 "-c:a", "aac", "-b:a", "128k",
                 output_path,
@@ -293,7 +293,7 @@ class VideoProcessor:
                 cmd_simple = [
                     "ffmpeg", "-y",
                     "-i", path,
-                    "-vf", f"subtitles='{srt_escaped}'",
+                    "-vf", f"subtitles={srt_escaped}",
                     "-c:v", "libx264", "-crf", "23",
                     "-c:a", "aac", "-b:a", "128k",
                     output_path,

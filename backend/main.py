@@ -64,6 +64,7 @@ class ExportRequest(BaseModel):
     file_path: str
     format: str = Field("horizontal", pattern="^(horizontal|vertical|both)$")
     quality: str = Field("medium", pattern="^(low|medium|high)$")
+    output_name: Optional[str] = None
 
 
 class AnalyzeRequest(BaseModel):
@@ -83,12 +84,22 @@ class AISettingsRequest(BaseModel):
     model: str
 
 
-class ProjectData(BaseModel):
-    """Project state for saving."""
-    name: str
+class VideoItem(BaseModel):
+    """Single video in a project."""
     file_path: str
+    original_filename: str = ""
+    order: int = 0
     cuts: Optional[List[Segment]] = None
     subtitles: Optional[List[SubtitleItem]] = None
+
+
+class ProjectData(BaseModel):
+    """Project state for saving (v2: multi-video)."""
+    name: str
+    file_path: str = ""  # legacy single-video compat
+    videos: Optional[List[VideoItem]] = None
+    cuts: Optional[List[Segment]] = None  # legacy compat
+    subtitles: Optional[List[SubtitleItem]] = None  # legacy compat
     settings: Optional[Dict] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -98,7 +109,8 @@ class ProjectResponse(BaseModel):
     """Saved project metadata."""
     id: str
     name: str
-    file_path: str
+    file_path: str = ""
+    video_count: int = 0
     updated_at: str
 
 
@@ -234,6 +246,35 @@ async def upload_video(file: UploadFile = File(...)) -> dict:
         )
 
 
+@app.post("/api/upload-multiple")
+async def upload_multiple_videos(files: List[UploadFile] = File(...)) -> dict:
+    """Upload multiple video files at once."""
+    try:
+        results = []
+        for file in files:
+            file_ext = Path(file.filename).suffix
+            safe_filename = f"{datetime.now().timestamp()}{file_ext}"
+            file_path = os.path.join(UPLOADS_DIR, safe_filename)
+
+            async with aiofiles.open(file_path, "wb") as f:
+                content = await file.read()
+                await f.write(content)
+
+            info = video_processor.get_video_info(file_path)
+            thumbnail_path = video_processor.generate_thumbnail(file_path)
+
+            results.append({
+                "file_path": file_path,
+                "original_filename": file.filename,
+                "info": info.to_dict(),
+                "thumbnail": thumbnail_path,
+            })
+
+        return {"success": True, "files": results}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Upload failed: {str(e)}")
+
+
 @app.get("/api/uploads")
 async def list_uploads() -> dict:
     """List uploaded video files (newest first) with saved subtitles if available."""
@@ -276,11 +317,14 @@ async def download_file(filename: str):
     file_path = os.path.join(UPLOADS_DIR, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
+    from urllib.parse import quote
+    safe_filename = quote(filename)
     return FileResponse(
         file_path,
         media_type="video/mp4",
-        filename=filename,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}",
+        },
     )
 
 
@@ -370,6 +414,18 @@ async def export_video(request: ExportRequest) -> dict:
             format_type=request.format,
         )
         output_path = await run_in_threadpool(_consume_generator, gen)
+
+        # 사용자 지정 파일명 적용
+        if request.output_name and output_path:
+            import re
+            safe_name = re.sub(r'[^a-zA-Z0-9가-힣_\-]', '_', request.output_name)
+            ext = os.path.splitext(output_path)[1] or '.mp4'
+            new_path = os.path.join(os.path.dirname(output_path), f"{safe_name}{ext}")
+            if os.path.exists(output_path) and output_path != new_path:
+                if os.path.exists(new_path):
+                    os.remove(new_path)
+                os.rename(output_path, new_path)
+                output_path = new_path
 
         return {"success": True, "output_path": output_path}
 
@@ -593,11 +649,13 @@ async def list_projects() -> dict:
                         async with aiofiles.open(project_path, "r", encoding="utf-8") as f:
                             content = await f.read()
                             project = json.loads(content)
+                            videos = project.get("videos") or []
                             projects.append(
                                 {
                                     "id": filename.replace(".json", ""),
                                     "name": project.get("name"),
-                                    "file_path": project.get("file_path"),
+                                    "file_path": project.get("file_path", ""),
+                                    "video_count": len(videos) if videos else (1 if project.get("file_path") else 0),
                                     "updated_at": project.get("updated_at"),
                                 }
                             )
@@ -620,8 +678,9 @@ async def save_project(request: ProjectData) -> dict:
         project_data = {
             "name": request.name,
             "file_path": request.file_path,
-            "cuts": request.cuts or [],
-            "subtitles": request.subtitles or [],
+            "videos": [v.dict() if hasattr(v, 'dict') else v for v in (request.videos or [])],
+            "cuts": [c.dict() if hasattr(c, 'dict') else c for c in (request.cuts or [])],
+            "subtitles": [s.dict() if hasattr(s, 'dict') else s for s in (request.subtitles or [])],
             "settings": request.settings or {},
             "created_at": request.created_at or datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat(),
@@ -653,6 +712,60 @@ async def get_project(project_id: str) -> dict:
             content = await f.read()
             project = json.loads(content)
             return {"success": True, "project": project}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============================================================================
+# Eject (Concat + Export)
+# ============================================================================
+
+
+class EjectRequest(BaseModel):
+    """Request to eject (concat all project videos into one)."""
+    video_paths: List[str]
+    output_name: str = "project_export.mp4"
+    quality: str = Field("medium", pattern="^(low|medium|high)$")
+
+
+@app.post("/api/eject")
+async def eject_project(request: EjectRequest) -> dict:
+    """Concatenate all project videos into a single output file."""
+    try:
+        safe_paths = [os.path.basename(p) for p in request.video_paths]
+        full_paths = []
+        for sp in safe_paths:
+            fp = os.path.join(UPLOADS_DIR, sp)
+            if not os.path.exists(fp):
+                raise HTTPException(status_code=404, detail=f"Video not found: {sp}")
+            full_paths.append(fp)
+
+        gen = video_processor.concat_videos(
+            full_paths,
+            output_name=os.path.basename(request.output_name),
+            quality=request.quality,
+        )
+
+        result_path = ""
+        progress_data = {}
+        try:
+            while True:
+                progress_data = next(gen)
+        except StopIteration as e:
+            result_path = e.value or ""
+
+        if not result_path:
+            raise RuntimeError(progress_data.get("message", "Eject failed"))
+
+        filename = os.path.basename(result_path)
+        return {
+            "success": True,
+            "file_path": result_path,
+            "filename": filename,
+            "download_url": f"/api/download/{filename}",
+            "message": f"Ejected {len(full_paths)} videos into one",
+        }
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

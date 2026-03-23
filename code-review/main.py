@@ -12,6 +12,7 @@ from datetime import datetime
 
 from fastapi import FastAPI, UploadFile, File, WebSocket, HTTPException, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.concurrency import run_in_threadpool  # Gemini 리뷰: 이벤트 루프 블로킹 방지
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -261,6 +262,7 @@ async def list_uploads() -> dict:
 @app.get("/api/uploads/{filename}")
 async def serve_upload(filename: str):
     """Serve an uploaded video file for browser playback."""
+    filename = os.path.basename(filename)  # Path Traversal 방어 (Gemini 리뷰)
     file_path = os.path.join(UPLOADS_DIR, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
@@ -270,6 +272,7 @@ async def serve_upload(filename: str):
 @app.get("/api/download/{filename}")
 async def download_file(filename: str):
     """Download exported video file."""
+    filename = os.path.basename(filename)  # Path Traversal 방어 (Gemini 리뷰)
     file_path = os.path.join(UPLOADS_DIR, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
@@ -300,39 +303,31 @@ async def get_video_info(file_path: str) -> dict:
 # ============================================================================
 
 
+def _consume_generator(gen):
+    """동기 generator를 소진하고 return value를 반환. threadpool에서 실행용."""
+    output_path = None
+    try:
+        while True:
+            next(gen)
+    except StopIteration as e:
+        output_path = e.value
+    return output_path
+
+
 @app.post("/api/cut")
 async def cut_segments(request: CutRequest) -> dict:
-    """
-    Cut and merge video segments.
-
-    Request:
-        - file_path: Path to video
-        - segments: List of {start, end} timestamps
-    """
+    """Cut and merge video segments."""
     try:
         if not os.path.exists(request.file_path):
             raise HTTPException(status_code=404, detail="File not found")
 
         segments = [{"start": s.start, "end": s.end} for s in request.segments]
-
         gen = video_processor.cut_segments(request.file_path, segments)
-        output_path = None
 
-        try:
-            while True:
-                update = next(gen)
-                await broadcast_progress(
-                    update["status"],
-                    update["progress"],
-                    update["message"],
-                )
-        except StopIteration as e:
-            output_path = e.value
+        # run_in_threadpool: 이벤트 루프 블로킹 방지 (Gemini 리뷰)
+        output_path = await run_in_threadpool(_consume_generator, gen)
 
-        return {
-            "success": True,
-            "output_path": output_path,
-        }
+        return {"success": True, "output_path": output_path}
 
     except HTTPException:
         raise
@@ -342,44 +337,19 @@ async def cut_segments(request: CutRequest) -> dict:
 
 @app.post("/api/subtitle")
 async def burn_subtitles(request: SubtitleRequest) -> dict:
-    """
-    Burn subtitles into video with styling.
-
-    Request:
-        - file_path: Path to video
-        - subtitles: List of {start, end, text, style}
-    """
+    """Burn subtitles into video with styling."""
     try:
         if not os.path.exists(request.file_path):
             raise HTTPException(status_code=404, detail="File not found")
 
         subtitles = [
-            {
-                "start": s.start,
-                "end": s.end,
-                "text": s.text,
-            }
+            {"start": s.start, "end": s.end, "text": s.text}
             for s in request.subtitles
         ]
-
         gen = video_processor.burn_subtitles(request.file_path, subtitles)
-        output_path = None
+        output_path = await run_in_threadpool(_consume_generator, gen)
 
-        try:
-            while True:
-                update = next(gen)
-                await broadcast_progress(
-                    update["status"],
-                    update["progress"],
-                    update["message"],
-                )
-        except StopIteration as e:
-            output_path = e.value  # Generator return value
-
-        return {
-            "success": True,
-            "output_path": output_path,
-        }
+        return {"success": True, "output_path": output_path}
 
     except HTTPException:
         raise
@@ -389,14 +359,7 @@ async def burn_subtitles(request: SubtitleRequest) -> dict:
 
 @app.post("/api/export")
 async def export_video(request: ExportRequest) -> dict:
-    """
-    Export final video with quality settings.
-
-    Request:
-        - file_path: Path to video
-        - format: "horizontal", "vertical", or "both"
-        - quality: "low", "medium", or "high"
-    """
+    """Export final video with quality settings."""
     try:
         if not os.path.exists(request.file_path):
             raise HTTPException(status_code=404, detail="File not found")
@@ -406,23 +369,9 @@ async def export_video(request: ExportRequest) -> dict:
             quality=request.quality,
             format_type=request.format,
         )
-        output_path = None
+        output_path = await run_in_threadpool(_consume_generator, gen)
 
-        try:
-            while True:
-                update = next(gen)
-                await broadcast_progress(
-                    update["status"],
-                    update["progress"],
-                    update["message"],
-                )
-        except StopIteration as e:
-            output_path = e.value
-
-        return {
-            "success": True,
-            "output_path": output_path,
-        }
+        return {"success": True, "output_path": output_path}
 
     except HTTPException:
         raise
@@ -495,10 +444,10 @@ async def generate_vision_subtitles(request: VisionSubtitleRequest) -> dict:
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Video file not found")
 
-        # Smart interval: 2초 고정 — AI가 장면 전환을 알아서 판단
-        SMART_INTERVAL = 2.0
+        # Smart interval: 3초 — 시연 영상은 장면 전환이 느려서 충분 (비용 ~30% 절감)
+        SMART_INTERVAL = 3.0
 
-        # Step 1: Extract frames at 2-second intervals
+        # Step 1: Extract frames at 3-second intervals
         frames = video_processor.extract_frames(file_path, SMART_INTERVAL)
 
         # Step 2: 2-Pass Smart Analysis
@@ -516,7 +465,7 @@ async def generate_vision_subtitles(request: VisionSubtitleRequest) -> dict:
             "success": True,
             "subtitles": subtitles,
             "frame_count": len(frames),
-            "message": f"스마트 분석 완료! {len(subtitles)}개 자막 생성 (2-Pass AI)",
+            "message": f"스마트 분석 완료! {len(subtitles)}개 자막 생성 (2-Pass AI, 3초 간격)",
         }
 
     except HTTPException:

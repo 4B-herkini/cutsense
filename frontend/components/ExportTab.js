@@ -1,66 +1,147 @@
-const ExportTab = ({ onExport, isExporting, exportProgress, hasVideo, subtitleCount, exportResult }) => {
+const ExportTab = ({ onExport, onEject, isExporting, exportProgress, hasVideo, subtitleCount, exportResult, videoCount, projectName, segmentCount }) => {
     const [format, setFormat] = useState('horizontal');
     const [quality, setQuality] = useState('1080p');
+    const [ejectQuality, setEjectQuality] = useState('medium');
+    const [outputName, setOutputName] = useState(projectName || '');
 
     return (
         <div className="tab-content">
             {/* 다운로드 링크 (내보내기 완료 시) */}
             {exportResult && (
                 <div style={{
-                    background: 'linear-gradient(135deg, #064e3b, #065f46)',
-                    borderRadius: '10px', padding: '16px',
-                    border: '1px solid #10b981', marginBottom: '8px',
+                    background: '#1E2E1E', borderRadius: '8px', padding: '20px',
+                    border: '2px solid #6A9955', marginBottom: '12px',
+                    boxShadow: '0 4px 12px rgba(106,153,85,0.2)',
                 }}>
-                    <div style={{ fontSize: '14px', color: '#6ee7b7', fontWeight: '700', marginBottom: '8px' }}>
-                        내보내기 완료!
+                    <div style={{ fontSize: '15px', color: '#6A9955', fontWeight: '800', marginBottom: '10px' }}>
+                        Export Complete!
                     </div>
-                    <div style={{ fontSize: '12px', color: '#a7f3d0', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '12px', color: '#A9B7C6', marginBottom: '6px', wordBreak: 'break-all' }}>
                         {exportResult.filename}
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#808080', marginBottom: '14px' }}>
+                        Downloads folder (browser default)
                     </div>
                     <a
                         href={exportResult.downloadUrl}
                         download={exportResult.filename}
                         style={{
                             display: 'block', textAlign: 'center',
-                            background: '#10b981', color: '#fff',
-                            padding: '10px', borderRadius: '8px',
+                            background: '#6A9955', color: '#fff',
+                            padding: '12px', borderRadius: '6px',
                             textDecoration: 'none', fontWeight: '700',
-                            fontSize: '14px',
+                            fontSize: '14px', border: 'none',
+                            cursor: 'pointer',
                         }}
                     >
-                        📥 다운로드
+                        Download File
+                    </a>
+                    <a
+                        href={exportResult.downloadUrl}
+                        target="_blank"
+                        style={{
+                            display: 'block', textAlign: 'center',
+                            color: '#6A9955', marginTop: '8px',
+                            textDecoration: 'underline', fontSize: '11px',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        Open in new tab
                     </a>
                 </div>
             )}
 
-            {/* 내보내기 요약 */}
+            {/* 이젝트 (프로젝트 완성) — 멀티 영상일 때만 표시 */}
+            {videoCount > 1 && (
+                <div style={{
+                    background: '#3C3F41', borderRadius: '6px', padding: '16px',
+                    border: '1px solid #CC7832', marginBottom: '8px',
+                }}>
+                    <div style={{ fontSize: '13px', color: '#CC7832', fontWeight: '700', marginBottom: '8px' }}>
+                        Eject — Combine All Videos
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#808080', marginBottom: '12px' }}>
+                        {videoCount} videos → 1 video ({projectName || 'project'})
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: '8px' }}>
+                        <label className="form-label" style={{ fontSize: '11px' }}>Quality</label>
+                        <select
+                            className="form-select"
+                            value={ejectQuality}
+                            onChange={(e) => setEjectQuality(e.target.value)}
+                            disabled={isExporting}
+                            style={{ fontSize: '12px' }}
+                        >
+                            <option value="low">Low (fast)</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High (slow)</option>
+                        </select>
+                    </div>
+
+                    <button
+                        className="button-primary"
+                        onClick={() => onEject && onEject({ quality: ejectQuality })}
+                        disabled={isExporting}
+                        style={{
+                            width: '100%', background: '#CC7832', color: '#fff',
+                            border: '1px solid #E8A84C', fontWeight: 700
+                        }}
+                    >
+                        {isExporting ? 'Ejecting...' : `Eject ${videoCount} Videos → 1`}
+                    </button>
+                </div>
+            )}
+
+            {/* 파일명 */}
+            <div className="form-group">
+                <label className="form-label">File Name</label>
+                <input
+                    type="text"
+                    value={outputName}
+                    onChange={(e) => setOutputName(e.target.value)}
+                    placeholder="export filename..."
+                    disabled={isExporting}
+                    style={{
+                        width: '100%', boxSizing: 'border-box',
+                        background: '#2B2B2B', border: '1px solid #515658', borderRadius: '4px',
+                        padding: '8px 12px', color: '#A9B7C6', fontSize: '13px', outline: 'none',
+                    }}
+                />
+                <div style={{ fontSize: '10px', color: '#606060', marginTop: '4px' }}>
+                    {outputName || 'export'}.mp4
+                </div>
+            </div>
+
+            {/* 내보내기 정보 */}
             <div style={{
-                background: '#1a1a2e', borderRadius: '8px', padding: '12px',
-                border: '1px solid #2a2a3a', marginBottom: '4px',
+                background: '#2B2B2B', borderRadius: '6px', padding: '12px',
+                border: '1px solid #515658', marginBottom: '4px',
             }}>
-                <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '6px' }}>내보내기 정보</div>
-                <div style={{ fontSize: '13px', color: '#e5e5e5', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div>📹 영상: {hasVideo ? '준비됨' : '없음'}</div>
-                    <div>💬 자막: {subtitleCount > 0 ? `${subtitleCount}개 (자동 입힘)` : '없음'}</div>
+                <div style={{ fontSize: '12px', color: '#808080', marginBottom: '6px' }}>Export Info</div>
+                <div style={{ fontSize: '12px', color: '#A9B7C6', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div>Video: {hasVideo ? 'Ready' : 'None'} {videoCount > 1 ? `(${videoCount} files)` : ''}</div>
+                    <div>Cuts: {segmentCount > 0 ? `${segmentCount} segments (auto apply)` : 'None (full video)'}</div>
+                    <div>Subtitles: {subtitleCount > 0 ? `${subtitleCount} items (auto burn)` : 'None'}</div>
                 </div>
             </div>
 
             <div className="form-group">
-                <label className="form-label">형식</label>
+                <label className="form-label">Format</label>
                 <select
                     className="form-select"
                     value={format}
                     onChange={(e) => setFormat(e.target.value)}
                     disabled={isExporting}
                 >
-                    <option value="horizontal">가로 (16:9)</option>
-                    <option value="vertical">세로 (9:16)</option>
-                    <option value="both">둘 다</option>
+                    <option value="horizontal">Horizontal (16:9)</option>
+                    <option value="vertical">Vertical (9:16)</option>
+                    <option value="both">Both</option>
                 </select>
             </div>
 
             <div className="form-group">
-                <label className="form-label">품질</label>
+                <label className="form-label">Quality</label>
                 <select
                     className="form-select"
                     value={quality}
@@ -75,22 +156,21 @@ const ExportTab = ({ onExport, isExporting, exportProgress, hasVideo, subtitleCo
 
             {isExporting && (
                 <div className="form-group">
-                    <label className="form-label">내보내기 진행률</label>
-                    <div style={{
-                        height: '6px', background: '#2a2a3a', borderRadius: '3px', overflow: 'hidden',
-                    }}>
+                    <label className="form-label">Progress</label>
+                    <div className="progress-bar">
                         <div style={{
                             height: '100%', borderRadius: '3px',
-                            background: 'linear-gradient(90deg, #6366f1, #a78bfa)',
+                            background: '#CC7832',
                             width: `${exportProgress}%`,
                             transition: 'width 0.5s ease',
                         }}></div>
                     </div>
-                    <div style={{ fontSize: '12px', color: '#a78bfa', marginTop: '6px', textAlign: 'center' }}>
-                        {exportProgress < 30 ? '자막 입히는 중...'
-                            : exportProgress < 80 ? '영상 인코딩 중...'
-                            : exportProgress < 100 ? '마무리 중...'
-                            : '완료!'
+                    <div style={{ fontSize: '11px', color: '#CC7832', marginTop: '6px', textAlign: 'center' }}>
+                        {exportProgress < 15 ? 'Preparing...'
+                            : exportProgress < 35 ? 'Cutting segments...'
+                            : exportProgress < 60 ? 'Burning subtitles...'
+                            : exportProgress < 95 ? 'Encoding final...'
+                            : 'Complete!'
                         } ({exportProgress}%)
                     </div>
                 </div>
@@ -98,11 +178,14 @@ const ExportTab = ({ onExport, isExporting, exportProgress, hasVideo, subtitleCo
 
             <button
                 className="button-primary"
-                onClick={() => onExport({ format, quality })}
+                onClick={() => onExport({ format, quality, outputName: outputName.trim() || 'export' })}
                 disabled={isExporting || !hasVideo}
                 style={{ width: '100%' }}
             >
-                {isExporting ? '내보내는 중...' : !hasVideo ? '영상을 먼저 업로드하세요' : subtitleCount > 0 ? `자막 포함 내보내기 (${subtitleCount}개)` : '내보내기'}
+                {isExporting ? 'Exporting...'
+                    : !hasVideo ? 'Upload a video first'
+                    : `Export${segmentCount > 0 ? ` (${segmentCount} cuts)` : ''}${subtitleCount > 0 ? ` + ${subtitleCount} subs` : ''}`
+                }
             </button>
         </div>
     );

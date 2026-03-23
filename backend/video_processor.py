@@ -598,3 +598,104 @@ class VideoProcessor:
             "bottom": "h-text_h-10",
         }
         return positions.get(position, "h-text_h-10")
+
+    def concat_videos(self, video_paths: list, output_name: str = "project_export.mp4", quality: str = "medium") -> Generator[dict, None, str]:
+        """
+        Concatenate multiple videos into one using FFmpeg concat demuxer.
+
+        Args:
+            video_paths: List of video file paths in order
+            output_name: Output filename
+            quality: Quality level (low, medium, high)
+
+        Yields:
+            Progress updates
+
+        Returns:
+            Path to concatenated video
+        """
+        import tempfile
+
+        try:
+            if not video_paths:
+                raise ValueError("No videos to concatenate")
+
+            if len(video_paths) == 1:
+                # 영상 1개면 그냥 복사
+                output_path = os.path.join(self.uploads_dir, output_name)
+                cmd = [
+                    "ffmpeg", "-y", "-i", video_paths[0],
+                    "-c", "copy", output_path
+                ]
+                yield {"status": "exporting", "progress": 50, "message": "Exporting single video..."}
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                if result.returncode != 0:
+                    raise RuntimeError(f"Export failed: {result.stderr[-300:]}")
+                yield {"status": "exporting", "progress": 100, "message": "Complete!"}
+                return output_path
+
+            # 멀티 영상: concat demuxer 사용
+            yield {"status": "exporting", "progress": 5, "message": f"Preparing {len(video_paths)} videos..."}
+
+            # 1단계: 모든 영상을 동일 코덱/해상도로 re-encode
+            crf_map = {"low": 28, "medium": 23, "high": 18}
+            crf = str(crf_map.get(quality, 23))
+
+            # 첫 영상 해상도 기준
+            first_info = self.get_video_info(video_paths[0])
+            target_w = first_info.width
+            target_h = first_info.height
+
+            temp_files = []
+            for i, vpath in enumerate(video_paths):
+                progress = 10 + int((i / len(video_paths)) * 60)
+                yield {"status": "exporting", "progress": progress, "message": f"Re-encoding video {i+1}/{len(video_paths)}..."}
+
+                temp_path = os.path.join(self.uploads_dir, f"_concat_temp_{i}.ts")
+                temp_files.append(temp_path)
+
+                cmd = [
+                    "ffmpeg", "-y", "-i", vpath,
+                    "-vf", f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2",
+                    "-c:v", "libx264", "-crf", crf,
+                    "-c:a", "aac", "-b:a", "128k",
+                    "-ar", "44100", "-ac", "2",
+                    temp_path
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                if result.returncode != 0:
+                    raise RuntimeError(f"Re-encode failed for video {i+1}: {result.stderr[-300:]}")
+
+            # 2단계: concat demuxer로 이어붙이기
+            yield {"status": "exporting", "progress": 80, "message": "Concatenating videos..."}
+
+            concat_list = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, dir=self.uploads_dir)
+            for tf in temp_files:
+                concat_list.write(f"file '{tf}'\n")
+            concat_list.close()
+
+            output_path = os.path.join(self.uploads_dir, output_name)
+            cmd = [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                "-i", concat_list.name,
+                "-c", "copy", output_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+            # 임시 파일 정리
+            os.unlink(concat_list.name)
+            for tf in temp_files:
+                try:
+                    os.unlink(tf)
+                except:
+                    pass
+
+            if result.returncode != 0:
+                raise RuntimeError(f"Concat failed: {result.stderr[-300:]}")
+
+            yield {"status": "exporting", "progress": 100, "message": "Complete!"}
+            return output_path
+
+        except Exception as e:
+            yield {"status": "error", "message": str(e)}
+            return ""

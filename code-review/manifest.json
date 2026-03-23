@@ -1,0 +1,24 @@
+{
+  "name": "CutSense - AI 비디오 에디터",
+  "short_name": "CutSense",
+  "description": "AI Vision 기반 시연영상 자동 자막 편집기",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#2B2B2B",
+  "theme_color": "#CC7832",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

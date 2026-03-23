@@ -1,4 +1,4 @@
-const MenuBar = ({ onNewProject, onOpenVideo, onSaveProject, onExport, onSettings, onToggleCrosshair, showCrosshair, onAbout, onShowProjects }) => {
+const MenuBar = ({ onNewProject, onOpenVideo, onSaveProject, onExport, onSettings, onToggleCrosshair, showCrosshair, onAbout }) => {
     const [openMenu, setOpenMenu] = useState(null);
     const menuRef = useRef(null);
 
@@ -24,8 +24,6 @@ const MenuBar = ({ onNewProject, onOpenVideo, onSaveProject, onExport, onSetting
     const menus = {
         '파일': [
             { label: '새 프로젝트', action: onNewProject, shortcut: 'Ctrl+N' },
-            { label: '프로젝트 목록', action: onShowProjects, shortcut: '' },
-            { type: 'separator' },
             { label: '영상 열기', action: onOpenVideo, shortcut: 'Ctrl+O' },
             { type: 'separator' },
             { label: '프로젝트 저장', action: onSaveProject, shortcut: 'Ctrl+S' },

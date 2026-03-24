@@ -133,7 +133,7 @@ app = FastAPI(
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:9000", "http://127.0.0.1:9000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -153,6 +153,29 @@ try:
 except ValueError:
     # API key not configured yet
     ai_service = None
+
+
+def validate_file_path(file_path: str) -> str:
+    """
+    Path Traversal 방어: file_path가 UPLOADS_DIR 내부인지 검증.
+    절대 경로로 정규화한 뒤 uploads 디렉토리 하위인지 확인.
+
+    Returns:
+        정규화된 안전한 경로
+
+    Raises:
+        HTTPException(403) if path escapes uploads directory
+    """
+    abs_uploads = os.path.abspath(UPLOADS_DIR)
+    abs_path = os.path.abspath(file_path)
+    if not abs_path.startswith(abs_uploads + os.sep) and abs_path != abs_uploads:
+        raise HTTPException(
+            status_code=403,
+            detail="접근이 허용되지 않는 경로입니다."
+        )
+    if not os.path.exists(abs_path):
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+    return abs_path
 
 
 # ============================================================================
@@ -368,11 +391,10 @@ def _consume_generator(gen):
 async def cut_segments(request: CutRequest) -> dict:
     """Cut and merge video segments."""
     try:
-        if not os.path.exists(request.file_path):
-            raise HTTPException(status_code=404, detail="File not found")
+        safe_path = validate_file_path(request.file_path)
 
         segments = [{"start": s.start, "end": s.end} for s in request.segments]
-        gen = video_processor.cut_segments(request.file_path, segments)
+        gen = video_processor.cut_segments(safe_path, segments)
 
         # run_in_threadpool: 이벤트 루프 블로킹 방지 (Gemini 리뷰)
         output_path = await run_in_threadpool(_consume_generator, gen)
@@ -389,14 +411,13 @@ async def cut_segments(request: CutRequest) -> dict:
 async def burn_subtitles(request: SubtitleRequest) -> dict:
     """Burn subtitles into video with styling."""
     try:
-        if not os.path.exists(request.file_path):
-            raise HTTPException(status_code=404, detail="File not found")
+        safe_path = validate_file_path(request.file_path)
 
         subtitles = [
             {"start": s.start, "end": s.end, "text": s.text}
             for s in request.subtitles
         ]
-        gen = video_processor.burn_subtitles(request.file_path, subtitles)
+        gen = video_processor.burn_subtitles(safe_path, subtitles)
         output_path = await run_in_threadpool(_consume_generator, gen)
 
         return {"success": True, "output_path": output_path}
@@ -411,11 +432,10 @@ async def burn_subtitles(request: SubtitleRequest) -> dict:
 async def export_video(request: ExportRequest) -> dict:
     """Export final video with quality settings."""
     try:
-        if not os.path.exists(request.file_path):
-            raise HTTPException(status_code=404, detail="File not found")
+        safe_path = validate_file_path(request.file_path)
 
         gen = video_processor.export_video(
-            request.file_path,
+            safe_path,
             quality=request.quality,
             format_type=request.format,
         )
@@ -502,9 +522,7 @@ async def generate_vision_subtitles(request: VisionSubtitleRequest) -> dict:
                 detail="AI service not configured. Set API credentials first.",
             )
 
-        file_path = request.file_path
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="Video file not found")
+        file_path = validate_file_path(request.file_path)
 
         # Smart interval: 5초 — 장면 전환이 느린 시연 영상에 적합 (비용 절감 + 자막 과다 방지)
         SMART_INTERVAL = 5.0
@@ -805,9 +823,7 @@ async def merge_export(request: MergeExportRequest) -> dict:
         processed_paths = []
 
         for vi, video in enumerate(request.videos):
-            fp = video.file_path
-            if not os.path.exists(fp):
-                raise HTTPException(status_code=404, detail=f"Video not found: {fp}")
+            fp = validate_file_path(video.file_path)
 
             current_path = fp
 

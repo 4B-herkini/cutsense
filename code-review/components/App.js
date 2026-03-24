@@ -1100,7 +1100,7 @@ const App = () => {
             const response = await fetch(`${settings.serverUrl}/api/ai/analyze`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ videoPath: videoFile.url, provider: settings.aiProvider, apiKey: settings.apiKey })
+                body: JSON.stringify({ videoPath: videoFile.url, provider: settings.aiProvider })
             });
             if (response.ok) {
                 const data = await response.json();
@@ -1123,7 +1123,7 @@ const App = () => {
             const response = await fetch(`${settings.serverUrl}/api/ai/generate-title`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ segment: rec, provider: settings.aiProvider, apiKey: settings.apiKey })
+                body: JSON.stringify({ segment: rec, provider: settings.aiProvider })
             });
             if (response.ok) {
                 const data = await response.json();

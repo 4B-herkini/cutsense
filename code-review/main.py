@@ -54,9 +54,15 @@ class SubtitleRequest(BaseModel):
     subtitles: List[SubtitleItem]
 
 
+class KeepSegment(BaseModel):
+    start: float
+    end: float
+
 class VisionSubtitleRequest(BaseModel):
     """Request to generate subtitles from screen capture using Vision AI."""
     file_path: str
+    style: Optional[str] = "portfolio"  # portfolio, training, client, sns, qa
+    keep_segments: Optional[List[KeepSegment]] = None  # 보존 구간 (있으면 해당 구간만 분석)
 
 
 class ExportRequest(BaseModel):
@@ -64,6 +70,7 @@ class ExportRequest(BaseModel):
     file_path: str
     format: str = Field("horizontal", pattern="^(horizontal|vertical|both)$")
     quality: str = Field("medium", pattern="^(low|medium|high)$")
+    output_name: Optional[str] = None
 
 
 class AnalyzeRequest(BaseModel):
@@ -79,16 +86,26 @@ class GenerateTitlesRequest(BaseModel):
 class AISettingsRequest(BaseModel):
     """Request to update AI settings."""
     provider: str = Field(..., pattern="^(claude|grok)$")
-    api_key: str
+    api_key: Optional[str] = None
     model: str
 
 
-class ProjectData(BaseModel):
-    """Project state for saving."""
-    name: str
+class VideoItem(BaseModel):
+    """Single video in a project."""
     file_path: str
+    original_filename: str = ""
+    order: int = 0
     cuts: Optional[List[Segment]] = None
     subtitles: Optional[List[SubtitleItem]] = None
+
+
+class ProjectData(BaseModel):
+    """Project state for saving (v2: multi-video)."""
+    name: str
+    file_path: str = ""  # legacy single-video compat
+    videos: Optional[List[VideoItem]] = None
+    cuts: Optional[List[Segment]] = None  # legacy compat
+    subtitles: Optional[List[SubtitleItem]] = None  # legacy compat
     settings: Optional[Dict] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -98,7 +115,8 @@ class ProjectResponse(BaseModel):
     """Saved project metadata."""
     id: str
     name: str
-    file_path: str
+    file_path: str = ""
+    video_count: int = 0
     updated_at: str
 
 
@@ -234,6 +252,35 @@ async def upload_video(file: UploadFile = File(...)) -> dict:
         )
 
 
+@app.post("/api/upload-multiple")
+async def upload_multiple_videos(files: List[UploadFile] = File(...)) -> dict:
+    """Upload multiple video files at once."""
+    try:
+        results = []
+        for file in files:
+            file_ext = Path(file.filename).suffix
+            safe_filename = f"{datetime.now().timestamp()}{file_ext}"
+            file_path = os.path.join(UPLOADS_DIR, safe_filename)
+
+            async with aiofiles.open(file_path, "wb") as f:
+                content = await file.read()
+                await f.write(content)
+
+            info = video_processor.get_video_info(file_path)
+            thumbnail_path = video_processor.generate_thumbnail(file_path)
+
+            results.append({
+                "file_path": file_path,
+                "original_filename": file.filename,
+                "info": info.to_dict(),
+                "thumbnail": thumbnail_path,
+            })
+
+        return {"success": True, "files": results}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Upload failed: {str(e)}")
+
+
 @app.get("/api/uploads")
 async def list_uploads() -> dict:
     """List uploaded video files (newest first) with saved subtitles if available."""
@@ -276,11 +323,14 @@ async def download_file(filename: str):
     file_path = os.path.join(UPLOADS_DIR, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
+    from urllib.parse import quote
+    safe_filename = quote(filename)
     return FileResponse(
         file_path,
         media_type="video/mp4",
-        filename=filename,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{safe_filename}",
+        },
     )
 
 
@@ -371,6 +421,18 @@ async def export_video(request: ExportRequest) -> dict:
         )
         output_path = await run_in_threadpool(_consume_generator, gen)
 
+        # 사용자 지정 파일명 적용
+        if request.output_name and output_path:
+            import re
+            safe_name = re.sub(r'[^a-zA-Z0-9가-힣_\-]', '_', request.output_name)
+            ext = os.path.splitext(output_path)[1] or '.mp4'
+            new_path = os.path.join(os.path.dirname(output_path), f"{safe_name}{ext}")
+            if os.path.exists(output_path) and output_path != new_path:
+                if os.path.exists(new_path):
+                    os.remove(new_path)
+                os.rename(output_path, new_path)
+                output_path = new_path
+
         return {"success": True, "output_path": output_path}
 
     except HTTPException:
@@ -444,14 +506,17 @@ async def generate_vision_subtitles(request: VisionSubtitleRequest) -> dict:
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Video file not found")
 
-        # Smart interval: 3초 — 시연 영상은 장면 전환이 느려서 충분 (비용 ~30% 절감)
-        SMART_INTERVAL = 3.0
+        # Smart interval: 5초 — 장면 전환이 느린 시연 영상에 적합 (비용 절감 + 자막 과다 방지)
+        SMART_INTERVAL = 5.0
 
-        # Step 1: Extract frames at 3-second intervals
-        frames = video_processor.extract_frames(file_path, SMART_INTERVAL)
+        # Step 1: Extract frames — 보존 구간이 있으면 해당 구간만 (원본 타임스탬프 유지)
+        keep_segs = None
+        if request.keep_segments:
+            keep_segs = [{"start": s.start, "end": s.end} for s in request.keep_segments]
+        frames = video_processor.extract_frames(file_path, SMART_INTERVAL, keep_segments=keep_segs)
 
         # Step 2: 2-Pass Smart Analysis
-        subtitles = ai_service.analyze_frames_for_subtitles(frames)
+        subtitles = ai_service.analyze_frames_for_subtitles(frames, style=request.style or "portfolio")
 
         # Step 3: Cleanup extracted frames
         video_processor.cleanup_frames(file_path)
@@ -501,17 +566,31 @@ async def suggest_effects(request: GenerateTitlesRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/api/ai/subtitle-styles")
+async def get_subtitle_styles() -> dict:
+    """사용 가능한 자막 스타일 목록 반환."""
+    from ai_service import SUBTITLE_STYLES
+    styles = [
+        {"id": k, "name": v["name"], "desc": v["desc"], "icon": v["icon"]}
+        for k, v in SUBTITLE_STYLES.items()
+    ]
+    return {"success": True, "styles": styles}
+
+
 @app.get("/api/ai/settings")
 async def get_ai_settings() -> dict:
     """Get current AI provider settings."""
     try:
         if ai_service:
+            key = ai_service.settings.api_key or ""
+            masked = ("*" * (len(key) - 4) + key[-4:]) if len(key) > 4 else ""
             return {
                 "success": True,
                 "settings": {
                     "provider": ai_service.settings.provider,
                     "model": ai_service.settings.model,
-                    "api_key_set": bool(ai_service.settings.api_key),
+                    "api_key_set": bool(key),
+                    "api_key_masked": masked,
                 },
             }
         return {
@@ -532,9 +611,14 @@ async def update_ai_settings(request: AISettingsRequest) -> dict:
     try:
         global ai_service
 
+        # api_key가 안 왔으면 기존 키 유지
+        api_key = request.api_key
+        if not api_key and ai_service and ai_service.settings.api_key:
+            api_key = ai_service.settings.api_key
+
         settings = AISettings(
             provider=request.provider,
-            api_key=request.api_key,
+            api_key=api_key or "",
             model=request.model,
         )
 
@@ -593,11 +677,13 @@ async def list_projects() -> dict:
                         async with aiofiles.open(project_path, "r", encoding="utf-8") as f:
                             content = await f.read()
                             project = json.loads(content)
+                            videos = project.get("videos") or []
                             projects.append(
                                 {
                                     "id": filename.replace(".json", ""),
                                     "name": project.get("name"),
-                                    "file_path": project.get("file_path"),
+                                    "file_path": project.get("file_path", ""),
+                                    "video_count": len(videos) if videos else (1 if project.get("file_path") else 0),
                                     "updated_at": project.get("updated_at"),
                                 }
                             )
@@ -620,8 +706,9 @@ async def save_project(request: ProjectData) -> dict:
         project_data = {
             "name": request.name,
             "file_path": request.file_path,
-            "cuts": request.cuts or [],
-            "subtitles": request.subtitles or [],
+            "videos": [v.dict() if hasattr(v, 'dict') else v for v in (request.videos or [])],
+            "cuts": [c.dict() if hasattr(c, 'dict') else c for c in (request.cuts or [])],
+            "subtitles": [s.dict() if hasattr(s, 'dict') else s for s in (request.subtitles or [])],
             "settings": request.settings or {},
             "created_at": request.created_at or datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat(),
@@ -653,6 +740,220 @@ async def get_project(project_id: str) -> dict:
             content = await f.read()
             project = json.loads(content)
             return {"success": True, "project": project}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project(project_id: str) -> dict:
+    """Delete a project."""
+    try:
+        safe_id = os.path.basename(project_id)
+        project_path = os.path.join(PROJECTS_DIR, f"{safe_id}.json")
+
+        if not os.path.exists(project_path):
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        os.remove(project_path)
+        return {"success": True, "message": f"Project {safe_id} deleted"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============================================================================
+# Eject (Concat + Export)
+# ============================================================================
+
+
+class VideoItem(BaseModel):
+    """Single video with its cuts and subtitles."""
+    file_path: str
+    cuts: Optional[List[KeepSegment]] = None       # 삭제 구간 (invertSegments 전)
+    subtitles: Optional[List[SubtitleItem]] = None  # 자막 목록
+
+
+class MergeExportRequest(BaseModel):
+    """멀티 영상 병합 내보내기 — 각 영상에 컷+자막 적용 후 하나로 합침."""
+    videos: List[VideoItem]
+    output_name: str = "merged_export.mp4"
+    format: str = Field("horizontal", pattern="^(horizontal|vertical|both)$")
+    quality: str = Field("medium", pattern="^(low|medium|high)$")
+
+
+class EjectRequest(BaseModel):
+    """Request to eject (concat all project videos into one)."""
+    video_paths: List[str]
+    output_name: str = "project_export.mp4"
+    quality: str = Field("medium", pattern="^(low|medium|high)$")
+
+
+@app.post("/api/merge-export")
+async def merge_export(request: MergeExportRequest) -> dict:
+    """
+    멀티 영상 병합 내보내기:
+    1. 각 영상별로 컷 구간 적용 (삭제 구간 → 보존 구간 반전 → cut)
+    2. 각 영상별로 자막 입히기 (컷 후 타임스탬프 역변환)
+    3. 전체 영상 병합
+    4. 최종 내보내기 (format/quality 적용)
+    """
+    try:
+        processed_paths = []
+
+        for vi, video in enumerate(request.videos):
+            fp = video.file_path
+            if not os.path.exists(fp):
+                raise HTTPException(status_code=404, detail=f"Video not found: {fp}")
+
+            current_path = fp
+
+            # Step A: 컷 적용
+            if video.cuts and len(video.cuts) > 0:
+                # cuts는 삭제 구간 → invertSegments로 보존 구간 계산
+                probe = video_processor.get_video_info(fp)
+                sorted_cuts = sorted(video.cuts, key=lambda c: c.start)
+
+                # 삭제 구간 → 보존 구간 반전
+                keep_segments = []
+                cursor = 0.0
+                for cut in sorted_cuts:
+                    if cut.start > cursor:
+                        keep_segments.append({"start": cursor, "end": cut.start})
+                    cursor = max(cursor, cut.end)
+                if cursor < probe.duration:
+                    keep_segments.append({"start": cursor, "end": probe.duration})
+
+                if keep_segments:
+                    gen = video_processor.cut_segments(current_path, keep_segments)
+                    cut_result = await run_in_threadpool(_consume_generator, gen)
+                    if cut_result:
+                        # 자막 타임스탬프 역변환 (원본→컷)
+                        if video.subtitles:
+                            remapped = []
+                            for sub in video.subtitles:
+                                acc = 0.0
+                                new_start = None
+                                new_end = None
+                                for seg in keep_segments:
+                                    seg_dur = seg["end"] - seg["start"]
+                                    if sub.start >= seg["start"] and sub.start <= seg["end"]:
+                                        new_start = acc + (sub.start - seg["start"])
+                                    if sub.end >= seg["start"] and sub.end <= seg["end"]:
+                                        new_end = acc + (sub.end - seg["start"])
+                                    acc += seg_dur
+                                if new_start is not None and new_end is not None:
+                                    remapped.append({"start": new_start, "end": new_end, "text": sub.text})
+                            video.subtitles = None  # 원본 자막 지우고
+                            # 자막을 별도로 처리 (아래에서)
+                            if remapped:
+                                gen2 = video_processor.burn_subtitles(cut_result, remapped)
+                                burn_result = await run_in_threadpool(_consume_generator, gen2)
+                                if burn_result:
+                                    current_path = burn_result
+                                else:
+                                    current_path = cut_result
+                            else:
+                                current_path = cut_result
+                        else:
+                            current_path = cut_result
+
+            # Step B: 자막 입히기 (컷 없는 경우에만 — 컷 있으면 위에서 이미 처리됨)
+            elif video.subtitles and len(video.subtitles) > 0:
+                subs = [{"start": s.start, "end": s.end, "text": s.text} for s in video.subtitles]
+                gen = video_processor.burn_subtitles(current_path, subs)
+                burn_result = await run_in_threadpool(_consume_generator, gen)
+                if burn_result:
+                    current_path = burn_result
+
+            processed_paths.append(current_path)
+
+        # Step C: 병합
+        if len(processed_paths) == 1:
+            final_path = processed_paths[0]
+        else:
+            gen = video_processor.concat_videos(
+                processed_paths,
+                output_name=os.path.basename(request.output_name),
+                quality=request.quality,
+            )
+            final_path = ""
+            try:
+                while True:
+                    next(gen)
+            except StopIteration as e:
+                final_path = e.value or ""
+
+            if not final_path:
+                raise RuntimeError("Video merge failed")
+
+        # Step D: 최종 내보내기 (format/quality)
+        gen = video_processor.export_video(
+            final_path,
+            quality=request.quality,
+            format_type=request.format,
+        )
+        export_path = await run_in_threadpool(_consume_generator, gen)
+
+        if not export_path:
+            raise RuntimeError("Final export failed")
+
+        filename = os.path.basename(export_path)
+        return {
+            "success": True,
+            "output_path": export_path,
+            "filename": filename,
+            "download_url": f"/api/download/{filename}",
+            "message": f"{len(request.videos)}개 영상 병합 내보내기 완료",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/eject")
+async def eject_project(request: EjectRequest) -> dict:
+    """Concatenate all project videos into a single output file."""
+    try:
+        safe_paths = [os.path.basename(p) for p in request.video_paths]
+        full_paths = []
+        for sp in safe_paths:
+            fp = os.path.join(UPLOADS_DIR, sp)
+            if not os.path.exists(fp):
+                raise HTTPException(status_code=404, detail=f"Video not found: {sp}")
+            full_paths.append(fp)
+
+        gen = video_processor.concat_videos(
+            full_paths,
+            output_name=os.path.basename(request.output_name),
+            quality=request.quality,
+        )
+
+        result_path = ""
+        progress_data = {}
+        try:
+            while True:
+                progress_data = next(gen)
+        except StopIteration as e:
+            result_path = e.value or ""
+
+        if not result_path:
+            raise RuntimeError(progress_data.get("message", "Eject failed"))
+
+        filename = os.path.basename(result_path)
+        return {
+            "success": True,
+            "file_path": result_path,
+            "filename": filename,
+            "download_url": f"/api/download/{filename}",
+            "message": f"Ejected {len(full_paths)} videos into one",
+        }
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

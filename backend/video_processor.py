@@ -510,7 +510,7 @@ class VideoProcessor:
             raise RuntimeError(f"Failed to export video: {str(e)}")
 
     def extract_frames(
-        self, path: str, interval: float = 5.0
+        self, path: str, interval: float = 5.0, keep_segments: List[Dict] = None
     ) -> List[Dict]:
         """
         Extract frames from video at regular intervals for Vision analysis.
@@ -518,6 +518,9 @@ class VideoProcessor:
         Args:
             path: Path to video file
             interval: Seconds between frame captures (default: 5s)
+            keep_segments: Optional list of {start, end} dicts — if provided,
+                           only extract frames from these time ranges.
+                           Timestamps in returned frames are ORIGINAL video time.
 
         Returns:
             List of {path, timestamp, duration} dicts
@@ -528,30 +531,52 @@ class VideoProcessor:
             os.makedirs(frames_dir, exist_ok=True)
 
             frames = []
-            timestamp = 0.0
 
-            while timestamp < info.duration:
-                frame_path = os.path.join(
-                    frames_dir,
-                    f"frame_{int(timestamp):05d}.jpg"
-                )
+            if keep_segments:
+                # 보존 구간만 프레임 추출 — 타임스탬프는 원본 영상 기준
+                for seg in keep_segments:
+                    timestamp = seg["start"]
+                    while timestamp < seg["end"]:
+                        frame_path = os.path.join(
+                            frames_dir,
+                            f"frame_{int(timestamp * 10):06d}.jpg"
+                        )
+                        duration = min(interval, seg["end"] - timestamp)
 
-                # Calculate duration for this frame's subtitle
-                duration = min(interval, info.duration - timestamp)
+                        ffmpeg.input(path, ss=timestamp).filter(
+                            "scale", 1280, -1
+                        ).output(
+                            frame_path, vframes=1, qscale=2
+                        ).run(quiet=True, overwrite_output=True)
 
-                ffmpeg.input(path, ss=timestamp).filter(
-                    "scale", 1280, -1
-                ).output(
-                    frame_path, vframes=1, qscale=2
-                ).run(quiet=True, overwrite_output=True)
+                        frames.append({
+                            "path": frame_path,
+                            "timestamp": timestamp,
+                            "duration": duration,
+                        })
+                        timestamp += interval
+            else:
+                # 전체 영상 프레임 추출
+                timestamp = 0.0
+                while timestamp < info.duration:
+                    frame_path = os.path.join(
+                        frames_dir,
+                        f"frame_{int(timestamp * 10):06d}.jpg"
+                    )
+                    duration = min(interval, info.duration - timestamp)
 
-                frames.append({
-                    "path": frame_path,
-                    "timestamp": timestamp,
-                    "duration": duration,
-                })
+                    ffmpeg.input(path, ss=timestamp).filter(
+                        "scale", 1280, -1
+                    ).output(
+                        frame_path, vframes=1, qscale=2
+                    ).run(quiet=True, overwrite_output=True)
 
-                timestamp += interval
+                    frames.append({
+                        "path": frame_path,
+                        "timestamp": timestamp,
+                        "duration": duration,
+                    })
+                    timestamp += interval
 
             return frames
 

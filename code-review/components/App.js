@@ -25,6 +25,58 @@ const parseTime = (timeStr) => {
     return 0;
 };
 
+// 삭제 구간 → 보존 구간 반전
+// segments: 잘라 버릴 구간들, duration: 영상 전체 길이
+// return: 살려야 할 구간들 (백엔드 cut API에 보낼 것)
+const invertSegments = (segments, duration) => {
+    if (!segments.length || !duration) return [];
+    // 시간순 정렬
+    const sorted = [...segments]
+        .map(s => ({ start: s.startTime || s.start, end: s.endTime || s.end }))
+        .sort((a, b) => a.start - b.start);
+    const keep = [];
+    let cursor = 0;
+    for (const seg of sorted) {
+        if (seg.start > cursor) {
+            keep.push({ start: cursor, end: seg.start });
+        }
+        cursor = Math.max(cursor, seg.end);
+    }
+    if (cursor < duration) {
+        keep.push({ start: cursor, end: duration });
+    }
+    return keep;
+};
+
+// 컷 영상 타임스탬프 → 원본 영상 타임스탬프 변환
+// keepSegments: invertSegments()가 반환한 보존 구간 배열 (원본 기준)
+// cutTime: 컷 영상에서의 시간
+// return: 원본 영상에서의 시간
+const mapCutTimeToOriginal = (cutTime, keepSegments) => {
+    let accumulated = 0;
+    for (const seg of keepSegments) {
+        const segDuration = seg.end - seg.start;
+        if (cutTime <= accumulated + segDuration) {
+            return seg.start + (cutTime - accumulated);
+        }
+        accumulated += segDuration;
+    }
+    const last = keepSegments[keepSegments.length - 1];
+    return last ? last.end : cutTime;
+};
+
+// 원본 영상 타임스탬프 → 컷 영상 타임스탬프 변환 (내보내기용)
+const mapOriginalToCutTime = (origTime, keepSegments) => {
+    let accumulated = 0;
+    for (const seg of keepSegments) {
+        if (origTime >= seg.start && origTime <= seg.end) {
+            return accumulated + (origTime - seg.start);
+        }
+        accumulated += seg.end - seg.start;
+    }
+    return accumulated; // 구간 밖이면 끝
+};
+
 // ============================================================================
 // Main App Component
 // ============================================================================
@@ -53,6 +105,8 @@ const App = () => {
     const [exportProgress, setExportProgress] = useState(0);
     const [zoom, setZoom] = useState(1);
 
+    const [selectedSubtitleIdx, setSelectedSubtitleIdx] = useState(null);
+
     // Vision AI states
     const [visionSubtitles, setVisionSubtitles] = useState([]);
     const [isVisionProcessing, setIsVisionProcessing] = useState(false);
@@ -66,9 +120,306 @@ const App = () => {
     const [showCrosshair, setShowCrosshair] = useState(true);
     const [exportResult, setExportResult] = useState(null);
 
+    // 프로젝트 states
+    const [projectName, setProjectName] = useState('');
+    const [projectId, setProjectId] = useState(null);
+    const [projectScreen, setProjectScreen] = useState('editor'); // always start in editor
+    const [showProjectPanel, setShowProjectPanel] = useState(false);
+    const [projectList, setProjectList] = useState([]);
+    const [contextMenu, setContextMenu] = useState(null); // { x, y, project }
+    const [videoList, setVideoList] = useState([]); // 멀티 영상 목록 [{file_path, original_filename, info, order}]
+    const [activeVideoIndex, setActiveVideoIndex] = useState(0);
+    const [dragVideoIdx, setDragVideoIdx] = useState(null);
+
+    // 십자선 인터랙션 states
+    const [isCutting, setIsCutting] = useState(false);
+    const [cutStartTime, setCutStartTime] = useState(null);
+    const [playbackRate, setPlaybackRate] = useState(1.0);
+    const [volume, setVolume] = useState(1.0);
+    const [isMuted, setIsMuted] = useState(false);
+    const [speedOSD, setSpeedOSD] = useState(null);
+    const [labelColors, setLabelColors] = useState({ tl: '#FFC66D', tr: '#FFC66D', bl: '#FFC66D', br: '#FFC66D' });
+    const crosshairRef = useRef(null);
+    const speedOSDTimer = useRef(null);
+    const [needFullscreen, setNeedFullscreen] = useState(true);
+
+    // 프리뷰 재생 states
+    const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+    const previewSegIdx = useRef(-1);
+    const previewCleanup = useRef(null);
+
+    // 컷 스톱워치 states
+    const [cutElapsed, setCutElapsed] = useState(0); // 실시간 경과 시간
+    const [cutFlash, setCutFlash] = useState(null); // 점멸 표시용 {duration, visible}
+    const cutFlashTimer = useRef(null);
+
+    // 프로젝트 생성 모달 states
+    const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+    const [newProjectName, setNewProjectName] = useState('');
+    const [newProjectType, setNewProjectType] = useState('single'); // 'single' | 'multi'
+    const pendingFilesRef = useRef(null); // 모달 확인 후 처리할 파일 임시 저장
+
+    // 풀스크린 — 첫 클릭 진입, ESC만 탈출 가능
+    // 클릭으로 빠지면 즉시 재진입 (user gesture 있으므로 성공)
+    // ESC로 빠지면 재진입 시도 실패 (user gesture 없음) → 상태바 복귀 버튼
+    useEffect(() => {
+        const goFullscreen = () => {
+            const el = document.documentElement;
+            if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+            else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        };
+        // 첫 클릭 시 풀스크린 (브라우저 보안 정책)
+        const firstClick = () => {
+            if (!document.fullscreenElement) goFullscreen();
+            document.removeEventListener('click', firstClick);
+        };
+        document.addEventListener('click', firstClick);
+        // 풀스크린 빠져나가면 즉시 재진입 시도
+        const fsChange = () => {
+            if (!document.fullscreenElement) {
+                // 클릭에 의한 탈출이면 user gesture가 남아있어 재진입 성공
+                // ESC에 의한 탈출이면 user gesture 없어 재진입 실패 → catch에서 needFullscreen 표시
+                const el = document.documentElement;
+                const p = el.requestFullscreen ? el.requestFullscreen()
+                    : el.webkitRequestFullscreen ? Promise.resolve(el.webkitRequestFullscreen())
+                    : Promise.reject();
+                p.then(() => {
+                    setNeedFullscreen(false);
+                }).catch(() => {
+                    // ESC로 빠진 경우 — 재진입 불가, 버튼 표시
+                    setNeedFullscreen(true);
+                });
+            } else {
+                setNeedFullscreen(false);
+            }
+        };
+        document.addEventListener('fullscreenchange', fsChange);
+        return () => {
+            document.removeEventListener('click', firstClick);
+            document.removeEventListener('fullscreenchange', fsChange);
+        };
+    }, []);
+
     const showToast = (message, type = 'info') => {
         setToast({ message, type });
     };
+
+    // ========================================================================
+    // 다중 모니터 대응 — 해상도/DPI 변경 감지 → 비디오 영역 재조정
+    // ========================================================================
+    useEffect(() => {
+        let currentDpr = window.devicePixelRatio || 1;
+
+        // 모니터 이동 시 devicePixelRatio 변경 감지
+        const checkDprChange = () => {
+            const mqString = `(resolution: ${currentDpr}dppx)`;
+            const mql = window.matchMedia(mqString);
+            const handleChange = () => {
+                const newDpr = window.devicePixelRatio || 1;
+                if (newDpr !== currentDpr) {
+                    currentDpr = newDpr;
+                    // 비디오 엘리먼트 강제 리레이아웃
+                    if (videoRef.current) {
+                        videoRef.current.style.maxWidth = '99.9%';
+                        requestAnimationFrame(() => {
+                            if (videoRef.current) videoRef.current.style.maxWidth = '100%';
+                        });
+                    }
+                }
+                // 다음 변경도 감지하도록 재등록
+                checkDprChange();
+            };
+            mql.addEventListener('change', handleChange, { once: true });
+            return () => mql.removeEventListener('change', handleChange);
+        };
+        const cleanupDpr = checkDprChange();
+
+        // 창 리사이즈 감지 (모니터 이동 후 창 크기 변경 포함)
+        let resizeTimer = null;
+        const handleResize = () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (videoRef.current) {
+                    // 비디오 비율 유지하면서 컨테이너에 맞추기
+                    videoRef.current.style.maxWidth = '99.9%';
+                    requestAnimationFrame(() => {
+                        if (videoRef.current) videoRef.current.style.maxWidth = '100%';
+                    });
+                }
+            }, 100);
+        };
+        window.addEventListener('resize', handleResize);
+
+        return () => {
+            if (cleanupDpr) cleanupDpr();
+            window.removeEventListener('resize', handleResize);
+            clearTimeout(resizeTimer);
+        };
+    }, []);
+
+    // ========================================================================
+    // 영상 색상 감지 → 라벨 색상 자동 전환
+    // ========================================================================
+    useEffect(() => {
+        if (!videoRef.current || !showCrosshair) return;
+        const video = videoRef.current;
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        const detectColors = () => {
+            if (video.paused && video.currentTime === 0) return;
+            try {
+                const w = video.videoWidth;
+                const h = video.videoHeight;
+                if (!w || !h) return;
+                canvas.width = w;
+                canvas.height = h;
+                ctx.drawImage(video, 0, 0, w, h);
+
+                const samplePoints = {
+                    tl: [w * 0.25, h * 0.25],
+                    tr: [w * 0.75, h * 0.25],
+                    bl: [w * 0.25, h * 0.75],
+                    br: [w * 0.75, h * 0.75]
+                };
+                const newColors = {};
+                for (const [key, [x, y]] of Object.entries(samplePoints)) {
+                    const pixel = ctx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data;
+                    const brightness = (pixel[0] * 299 + pixel[1] * 587 + pixel[2] * 114) / 1000;
+                    newColors[key] = brightness > 128 ? '#1E1E1E' : '#FFC66D';
+                }
+                setLabelColors(newColors);
+            } catch(e) {}
+        };
+
+        const interval = setInterval(detectColors, 500);
+        return () => clearInterval(interval);
+    }, [showCrosshair, isPlaying]);
+
+    // ========================================================================
+    // 컷 스톱워치 — 컷 진행 중 실시간 경과 시간
+    // ========================================================================
+    useEffect(() => {
+        if (!isCutting || cutStartTime === null || !videoRef.current) {
+            setCutElapsed(0);
+            return;
+        }
+        const interval = setInterval(() => {
+            if (videoRef.current) {
+                const elapsed = videoRef.current.currentTime - cutStartTime;
+                setCutElapsed(Math.max(0, elapsed));
+            }
+        }, 50); // 20fps 업데이트
+        return () => clearInterval(interval);
+    }, [isCutting, cutStartTime]);
+
+    // ========================================================================
+    // 마우스 인터랙션 핸들러 (영상 위 어디서든)
+    // ========================================================================
+
+    // OSD 표시 헬퍼
+    const showSpeedOSD = (text) => {
+        setSpeedOSD(text);
+        if (speedOSDTimer.current) clearTimeout(speedOSDTimer.current);
+        speedOSDTimer.current = setTimeout(() => setSpeedOSD(null), 1200);
+    };
+
+    // 가장 가까운 컷 경계 시간 찾기
+    const findNearestBoundary = (time) => {
+        if (segments.length === 0) return time;
+        let nearest = null;
+        let minDist = Infinity;
+        for (const seg of segments) {
+            const start = seg.startTime || seg.start;
+            const end = seg.endTime || seg.end;
+            for (const t of [start, end]) {
+                const dist = Math.abs(t - time);
+                if (dist < minDist) { minDist = dist; nearest = t; }
+            }
+        }
+        // 영상 처음/끝도 경계로 포함
+        if (Math.abs(time) < minDist) { nearest = 0; }
+        if (videoDuration && Math.abs(videoDuration - time) < minDist) { nearest = videoDuration; }
+        return nearest;
+    };
+
+    // 좌클릭 = 자르기 시작/끝 (프리뷰 중이면 경계 스냅)
+    const handleOverlayClick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!videoRef.current) return;
+        const clickTime = videoRef.current.currentTime;
+
+        // 프리뷰 재생 중이면 → 가장 가까운 경계로 이동
+        if (isPreviewPlaying) {
+            const snapTime = findNearestBoundary(clickTime);
+            videoRef.current.currentTime = snapTime;
+            showSpeedOSD(`⏭ ${formatTime(snapTime)}`);
+            return;
+        }
+
+        if (!isCutting) {
+            setIsCutting(true);
+            setCutStartTime(clickTime);
+            showToast(`✂ Cut START: ${formatTime(clickTime)}`, 'info');
+        } else {
+            if (clickTime > cutStartTime) {
+                const cutDuration = clickTime - cutStartTime;
+                setSegments(prev => [...prev, {
+                    id: Date.now(),
+                    startTime: cutStartTime,
+                    endTime: clickTime,
+                    label: `Cut ${prev.length + 1}`
+                }]);
+                showToast(`✂ 제거 구간: ${formatTime(cutStartTime)} ~ ${formatTime(clickTime)}`, 'success');
+                // 점멸 표시 시작 (2초간)
+                if (cutFlashTimer.current) clearTimeout(cutFlashTimer.current);
+                setCutFlash(cutDuration);
+                cutFlashTimer.current = setTimeout(() => setCutFlash(null), 2000);
+            } else {
+                showToast('End point must be after start', 'error');
+            }
+            setIsCutting(false);
+            setCutStartTime(null);
+        }
+    };
+
+    // 우클릭 = 배속 순환 (1.0 → 0.5 → 0.3 → 0.25 → 1.0)
+    const handleOverlayRightClick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!videoRef.current) return;
+        const speeds = [1.0, 0.5, 0.3, 0.25];
+        const currentIdx = speeds.indexOf(playbackRate);
+        const nextIdx = (currentIdx + 1) % speeds.length;
+        const newRate = speeds[nextIdx];
+        videoRef.current.playbackRate = newRate;
+        setPlaybackRate(newRate);
+        showSpeedOSD(newRate === 1.0 ? '▶ x1.0' : `🐢 x${newRate}`);
+    };
+
+    // ← → 화살표 = 5초 점프
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (!videoRef.current) return;
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 5);
+                showSpeedOSD('⏪ -5s');
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                videoRef.current.currentTime = Math.min(videoDuration, videoRef.current.currentTime + 5);
+                showSpeedOSD('⏩ +5s');
+            } else if (e.key === ' ') {
+                e.preventDefault();
+                if (isPreviewPlaying) { stopPreview(); videoRef.current.pause(); setIsPlaying(false); return; }
+                if (videoRef.current.paused) { videoRef.current.play(); setIsPlaying(true); }
+                else { videoRef.current.pause(); setIsPlaying(false); }
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [videoDuration]);
 
     // ========================================================================
     // Video Handlers
@@ -80,13 +431,13 @@ const App = () => {
     const handleDrop = (e) => {
         e.preventDefault();
         setDragOver(false);
-        const file = e.dataTransfer.files[0];
-        if (file && file.type.startsWith('video/')) loadVideo(file);
+        const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('video/'));
+        if (files.length > 0) handleAddVideosGate(files);
     };
 
     const handleFileSelect = (e) => {
-        const file = e.target.files[0];
-        if (file && file.type.startsWith('video/')) loadVideo(file);
+        const files = Array.from(e.target.files).filter(f => f.type.startsWith('video/'));
+        if (files.length > 0) handleAddVideosGate(files);
     };
 
     const loadVideo = async (file) => {
@@ -116,35 +467,68 @@ const App = () => {
     // Vision AI 2-Pass
     // ========================================================================
 
-    const handleVisionSubtitles = async () => {
+    const handleVisionSubtitles = async (style = 'portfolio') => {
         if (!uploadedFilePath) {
             showToast('영상을 먼저 업로드하세요', 'error');
             return;
         }
 
-        const estimatedFrames = Math.ceil((videoDuration || 60) / 3);
-        const estimatedCalls = 1 + Math.ceil(estimatedFrames / 6);
-        const estimatedCost = (estimatedCalls * 0.025).toFixed(2);
+        // 분석 대상 시간 계산
+        let analysisDuration = videoDuration || 60;
+        let keepSegments = null;
+
+        if (segments.length > 0) {
+            keepSegments = invertSegments(segments, videoDuration);
+            if (keepSegments.length === 0) {
+                showToast('보존할 구간이 없습니다', 'error');
+                return;
+            }
+            analysisDuration = keepSegments.reduce((sum, s) => sum + (s.end - s.start), 0);
+        }
+
+        const estFrames = Math.ceil(analysisDuration / 5);
+        const estCalls = 1 + Math.ceil(estFrames / 12);
+        const estCost = (estCalls * 0.025).toFixed(2);
+
+        const cutInfo = segments.length > 0
+            ? `컷 ${segments.length}개 제거 → 보존 구간만 분석 (${formatTime(analysisDuration)})\n`
+            : `원본 영상 전체 (${formatTime(analysisDuration)})\n`;
 
         if (!confirm(
-            `스마트 자막 생성을 시작합니다.\n\n` +
-            `예상 프레임: ${estimatedFrames}장 (3초 간격)\n` +
-            `예상 API 호출: ${estimatedCalls}회\n` +
-            `예상 비용: ~$${estimatedCost}\n\n` +
+            `[AI Vision 자막 생성]\n\n` +
+            `${cutInfo}` +
+            `AI가 화면을 5초 간격으로 캡처해서 직접 보고,\n` +
+            `장면 전환을 감지해 자연스러운 자막을 만듭니다.\n\n` +
+            `예상 프레임: ${estFrames}장 (5초 간격)\n` +
+            `예상 API 호출: ${estCalls}회\n` +
+            `예상 비용: ~$${estCost}\n\n` +
             `진행하시겠습니까?`
         )) return;
 
         setIsVisionProcessing(true);
         setVisionStage('extracting');
+        showToast('AI Vision 분석 중...', 'info');
+
         try {
+            // 원본 영상에서 직접 프레임 추출 (컷 구간이 있으면 보존 구간만)
+            // → 타임스탬프가 원본 영상 기준이므로 매핑 불필요!
+            const requestBody = {
+                file_path: uploadedFilePath,
+                style: style,
+            };
+            if (keepSegments) {
+                requestBody.keep_segments = keepSegments;
+            }
+
             const response = await fetch(`${settings.serverUrl}/api/ai/vision-subtitles`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ file_path: uploadedFilePath }),
+                body: JSON.stringify(requestBody),
             });
             const data = await response.json();
             if (data.success) {
                 setVisionStage('done');
+                // 타임스탬프가 이미 원본 영상 기준 — 매핑 필요 없음!
                 setVisionSubtitles(data.subtitles);
                 showToast(data.message, 'success');
             } else {
@@ -183,6 +567,234 @@ const App = () => {
     };
 
     // ========================================================================
+    // 프로젝트 핸들러
+    // ========================================================================
+
+    const loadProjectList = async () => {
+        try {
+            const res = await fetch(`${settings.serverUrl}/api/projects`);
+            const data = await res.json();
+            if (data.success) setProjectList(data.projects || []);
+        } catch (e) {}
+    };
+
+    const handleNewProject = (name) => {
+        setProjectName(name);
+        setProjectId(null);
+        setVideoList([]);
+        setVideoFile(null);
+        setSegments([]);
+        setSubtitles([]);
+        setVisionSubtitles([]);
+        setActiveVideoIndex(0);
+        setProjectScreen('editor');
+    };
+
+    const handleOpenProject = async (id) => {
+        try {
+            const res = await fetch(`${settings.serverUrl}/api/projects/${id}`);
+            const data = await res.json();
+            if (data.success && data.project) {
+                const p = data.project;
+                setProjectName(p.name);
+                setProjectId(id);
+
+                // v2 멀티 영상
+                if (p.videos && p.videos.length > 0) {
+                    setVideoList(p.videos);
+                    const first = p.videos[0];
+                    const filename = first.file_path.split(/[/\\]/).pop();
+                    setVideoFile({ name: first.original_filename || filename, url: `${settings.serverUrl}/api/uploads/${filename}` });
+                    setUploadedFilePath(first.file_path);
+                    setSegments(first.cuts || []);
+                    setSubtitles((first.subtitles || []).map(s => ({
+                        text: s.text, startTime: s.start, endTime: s.end,
+                        fontSize: 20, color: '#ffffff', position: 'bottom',
+                        backgroundColor: '#000000', backgroundEnabled: true,
+                    })));
+                    setActiveVideoIndex(0);
+                } else if (p.file_path) {
+                    // legacy v1
+                    const filename = p.file_path.split(/[/\\]/).pop();
+                    setVideoFile({ name: filename, url: `${settings.serverUrl}/api/uploads/${filename}` });
+                    setUploadedFilePath(p.file_path);
+                    setVideoList([{ file_path: p.file_path, original_filename: filename, order: 0 }]);
+                    setSegments(p.cuts || []);
+                    setSubtitles((p.subtitles || []).map(s => ({
+                        text: s.text, startTime: s.start, endTime: s.end,
+                        fontSize: 20, color: '#ffffff', position: 'bottom',
+                        backgroundColor: '#000000', backgroundEnabled: true,
+                    })));
+                }
+
+                setProjectScreen('editor');
+                showToast(`"${p.name}" loaded`, 'success');
+            }
+        } catch (e) { showToast('Failed to load project', 'error'); }
+    };
+
+    // 프로젝트 저장 (silent=true면 토스트 없이 조용히 저장)
+    const saveProjectInternal = async (silent = false) => {
+        if (!projectName) return;
+        try {
+            const body = {
+                name: projectName,
+                file_path: uploadedFilePath || '',
+                videos: videoList.map((v, i) => ({
+                    file_path: v.file_path,
+                    original_filename: v.original_filename || '',
+                    order: i,
+                    cuts: i === activeVideoIndex ? segments.map(s => ({ start: s.startTime || s.start, end: s.endTime || s.end })) : (v.cuts || []),
+                    subtitles: i === activeVideoIndex ? subtitles.map(s => ({ start: s.startTime, end: s.endTime, text: s.text })) : (v.subtitles || []),
+                })),
+                settings: { aiProvider: settings.aiProvider },
+            };
+            const res = await fetch(`${settings.serverUrl}/api/projects`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (data.success) {
+                setProjectId(data.project_id);
+                if (!silent) showToast(`"${projectName}" saved`, 'success');
+            }
+        } catch (e) { if (!silent) showToast('Save failed', 'error'); }
+    };
+
+    const handleSaveProject = () => saveProjectInternal(false);
+
+    // 자동 저장 — 프로젝트명+영상 있으면 2초 디바운스로 조용히 저장
+    const autoSaveTimer = useRef(null);
+    const [autoSaveStatus, setAutoSaveStatus] = useState('');
+    useEffect(() => {
+        if (!projectName) return;
+        if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+        autoSaveTimer.current = setTimeout(async () => {
+            setAutoSaveStatus('saving...');
+            await saveProjectInternal(true);
+            setAutoSaveStatus('saved');
+            setTimeout(() => setAutoSaveStatus(''), 2000);
+        }, 2000);
+        return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+    }, [projectName, segments, subtitles, videoList, activeVideoIndex]);
+
+    // 페이지 나가기 경고
+    useEffect(() => {
+        const handler = (e) => {
+            if (projectName && videoList.length > 0) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [projectName, videoList]);
+
+    // 영상 추가 게이트 — 프로젝트 없으면 모달 띄움
+    const handleAddVideosGate = (files) => {
+        if (!projectName) {
+            // 프로젝트 없음 → 파일 임시 저장 후 모달
+            pendingFilesRef.current = files;
+            setNewProjectName('');
+            setNewProjectType(files.length > 1 ? 'multi' : 'single');
+            setShowNewProjectModal(true);
+            return;
+        }
+        handleAddVideosReal(files);
+    };
+
+    // 모달에서 확인 후 실행
+    const handleNewProjectConfirm = () => {
+        if (!newProjectName.trim()) return;
+        handleNewProject(newProjectName.trim());
+        setShowNewProjectModal(false);
+
+        // 임시 저장된 파일이 있으면 바로 업로드
+        if (pendingFilesRef.current) {
+            const files = pendingFilesRef.current;
+            pendingFilesRef.current = null;
+            setTimeout(() => handleAddVideosReal(files), 100);
+        } else {
+            // 파일 없이 프로젝트만 생성한 경우 → 파일 선택 창 띄우기
+            setTimeout(() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'video/*';
+                input.multiple = (newProjectType === 'multi');
+                input.onchange = (e) => {
+                    const files = Array.from(e.target.files);
+                    if (files.length > 0) handleAddVideosReal(files);
+                };
+                input.click();
+            }, 200);
+        }
+    };
+
+    const handleAddVideosReal = async (files) => {
+        const formData = new FormData();
+        for (const f of files) formData.append('files', f);
+        try {
+            const res = await fetch(`${settings.serverUrl}/api/upload-multiple`, { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.success) {
+                const newVideos = data.files.map((f, i) => ({
+                    file_path: f.file_path,
+                    original_filename: f.original_filename,
+                    info: f.info,
+                    order: videoList.length + i,
+                    cuts: [],
+                    subtitles: [],
+                }));
+                setVideoList(prev => [...prev, ...newVideos]);
+                // 첫 영상이면 자동 선택
+                if (!videoFile && newVideos.length > 0) {
+                    const first = newVideos[0];
+                    const filename = first.file_path.split(/[/\\]/).pop();
+                    setVideoFile({ name: first.original_filename, url: `${settings.serverUrl}/api/uploads/${filename}` });
+                    setUploadedFilePath(first.file_path);
+                }
+                showToast(`${newVideos.length} video(s) added`, 'success');
+            }
+        } catch (e) { showToast('Upload failed', 'error'); }
+    };
+
+    const handleSwitchVideo = (idx) => {
+        // 현재 영상의 cuts/subtitles 저장
+        setVideoList(prev => prev.map((v, i) => i === activeVideoIndex ? {
+            ...v,
+            cuts: segments.map(s => ({ start: s.startTime || s.start, end: s.endTime || s.end })),
+            subtitles: subtitles.map(s => ({ start: s.startTime, end: s.endTime, text: s.text })),
+        } : v));
+
+        const target = videoList[idx];
+        const filename = target.file_path.split(/[/\\]/).pop();
+        setVideoFile({ name: target.original_filename || filename, url: `${settings.serverUrl}/api/uploads/${filename}` });
+        setUploadedFilePath(target.file_path);
+        setSegments((target.cuts || []).map(c => ({ id: Date.now() + Math.random(), startTime: c.start, endTime: c.end, label: `Cut` })));
+        setSubtitles((target.subtitles || []).map(s => ({
+            text: s.text, startTime: s.start, endTime: s.end,
+            fontSize: 20, color: '#ffffff', position: 'bottom',
+            backgroundColor: '#000000', backgroundEnabled: true,
+        })));
+        setActiveVideoIndex(idx);
+    };
+
+    // 드래그 드롭 순서 변경
+    const handleVideoDragStart = (idx) => setDragVideoIdx(idx);
+    const handleVideoDragOver = (e, idx) => { e.preventDefault(); };
+    const handleVideoDrop = (idx) => {
+        if (dragVideoIdx === null || dragVideoIdx === idx) return;
+        setVideoList(prev => {
+            const list = [...prev];
+            const [item] = list.splice(dragVideoIdx, 1);
+            list.splice(idx, 0, item);
+            return list;
+        });
+        if (activeVideoIndex === dragVideoIdx) setActiveVideoIndex(idx);
+        setDragVideoIdx(null);
+    };
+
+    // ========================================================================
     // Initial Load
     // ========================================================================
 
@@ -196,35 +808,54 @@ const App = () => {
                         ...prev,
                         aiProvider: data.settings.provider,
                         model: data.settings.model,
+                        apiKey: data.settings.api_key_masked || '(저장됨)',
+                        apiKeySaved: true,
                     }));
                 }
             } catch (e) { /* server not ready */ }
 
+            // 프로젝트 목록 로드 → 가장 최근 프로젝트 자동 복원
+            await loadProjectList();
             try {
-                const res = await fetch(`${settings.serverUrl}/api/uploads`);
-                const data = await res.json();
-                if (data.files && data.files.length > 0) {
-                    const latest = data.files[0];
-                    setUploadedFilePath(latest.path);
-                    const videoUrl = `${settings.serverUrl}/api/uploads/${latest.filename}`;
-                    setVideoFile({ name: latest.filename, url: videoUrl });
-
-                    if (latest.subtitles && latest.subtitles.length > 0) {
-                        setVisionSubtitles(latest.subtitles);
-                        const loadedSubs = latest.subtitles.map(sub => ({
-                            text: sub.text,
-                            startTime: sub.start,
-                            endTime: sub.end,
-                            fontSize: 20,
-                            color: '#ffffff',
-                            position: 'bottom',
-                            backgroundColor: '#000000',
-                            backgroundEnabled: true,
-                        }));
-                        setSubtitles(loadedSubs);
+                const listRes = await fetch('http://localhost:9000/api/projects');
+                const listData = await listRes.json();
+                if (listData.success && listData.projects && listData.projects.length > 0) {
+                    // updated_at 기준 정렬 (최신 먼저)
+                    const sorted = listData.projects.sort((a, b) =>
+                        (b.updated_at || '').localeCompare(a.updated_at || '')
+                    );
+                    const latest = sorted[0];
+                    // 직접 복원 (handleOpenProject 클로저 문제 방지)
+                    const projRes = await fetch(`http://localhost:9000/api/projects/${latest.id}`);
+                    const projData = await projRes.json();
+                    if (projData.success && projData.project) {
+                        const p = projData.project;
+                        setProjectName(p.name);
+                        setProjectId(latest.id);
+                        if (p.videos && p.videos.length > 0) {
+                            setVideoList(p.videos);
+                            const first = p.videos[0];
+                            const fname = first.file_path.split(/[/\\]/).pop();
+                            setVideoFile({ name: first.original_filename || fname, url: `http://localhost:9000/api/uploads/${fname}` });
+                            setUploadedFilePath(first.file_path);
+                            setSegments((first.cuts || []).map((c, i) => ({ id: Date.now() + i, startTime: c.start, endTime: c.end, label: `Cut ${i+1}` })));
+                            setSubtitles((first.subtitles || []).map(s => ({
+                                text: s.text, startTime: s.start, endTime: s.end,
+                                fontSize: 20, color: '#ffffff', position: 'bottom',
+                                backgroundColor: '#000000', backgroundEnabled: true,
+                            })));
+                            setActiveVideoIndex(0);
+                        } else if (p.file_path) {
+                            const fname = p.file_path.split(/[/\\]/).pop();
+                            setVideoFile({ name: fname, url: `http://localhost:9000/api/uploads/${fname}` });
+                            setUploadedFilePath(p.file_path);
+                            setVideoList([{ file_path: p.file_path, original_filename: fname, order: 0 }]);
+                        }
+                        setProjectScreen('editor');
+                        setToast({ message: `"${p.name}" auto-restored`, type: 'info' });
                     }
                 }
-            } catch (e) { /* no uploads yet */ }
+            } catch (e) { console.log('Auto-restore failed:', e); }
         };
         loadInitialData();
     }, []);
@@ -233,8 +864,35 @@ const App = () => {
     // Action Handlers
     // ========================================================================
 
+    // 프리뷰 강제 중지 헬퍼
+    const stopPreview = () => {
+        if (previewCleanup.current) previewCleanup.current();
+        setIsPreviewPlaying(false);
+        previewSegIdx.current = -1;
+    };
+
+    const handleVolumeChange = (val) => {
+        const v = Math.max(0, Math.min(1, parseFloat(val)));
+        setVolume(v);
+        if (videoRef.current) {
+            videoRef.current.volume = v;
+            videoRef.current.muted = v === 0;
+        }
+        setIsMuted(v === 0);
+    };
+
+    const handleMuteToggle = () => {
+        if (videoRef.current) {
+            const next = !isMuted;
+            videoRef.current.muted = next;
+            setIsMuted(next);
+        }
+    };
+
     const handlePlay = () => {
         if (videoRef.current) {
+            // 프리뷰 중이면 먼저 중지
+            if (isPreviewPlaying) stopPreview();
             if (isPlaying) { videoRef.current.pause(); setIsPlaying(false); }
             else { videoRef.current.play(); setIsPlaying(true); }
         }
@@ -242,12 +900,195 @@ const App = () => {
 
     const handleLoadedMetadata = () => { if (videoRef.current) setVideoDuration(videoRef.current.duration); };
     const handleTimeUpdate = () => { if (videoRef.current) setCurrentTime(videoRef.current.currentTime); };
-    const handleSeek = (time) => { if (videoRef.current) videoRef.current.currentTime = time; };
+    const handleSeek = (time) => {
+        if (!videoRef.current) return;
+        // 프리뷰 중이면 → 해당 시간이 포함된 보존 구간부터 프리뷰 이어가기
+        if (isPreviewPlaying) {
+            stopPreview(); // 기존 리스너 정리
+            const keepSegments = invertSegments(segments, videoDuration);
+            if (keepSegments.length === 0) return;
+            // 클릭한 시간이 속하는 보존 구간 찾기, 없으면 가장 가까운 다음 구간
+            let targetIdx = keepSegments.findIndex(s => time >= s.start && time <= s.end);
+            if (targetIdx === -1) {
+                // 가장 가까운 다음 보존 구간
+                targetIdx = keepSegments.findIndex(s => s.start >= time);
+                if (targetIdx === -1) targetIdx = keepSegments.length - 1;
+            }
+            // 해당 구간부터 프리뷰 재시작
+            setIsPreviewPlaying(true);
+            const playFromIdx = (idx) => {
+                if (idx >= keepSegments.length) {
+                    videoRef.current.pause();
+                    setIsPreviewPlaying(false);
+                    previewSegIdx.current = -1;
+                    showToast('Preview complete', 'success');
+                    return;
+                }
+                const seg = keepSegments[idx];
+                videoRef.current.currentTime = (idx === targetIdx && time >= seg.start && time <= seg.end) ? time : seg.start;
+                videoRef.current.play();
+                previewSegIdx.current = idx;
+                const onTimeUpdate = () => {
+                    if (videoRef.current && videoRef.current.currentTime >= seg.end) {
+                        videoRef.current.removeEventListener('timeupdate', onTimeUpdate);
+                        videoRef.current.removeEventListener('ended', onEnded);
+                        playFromIdx(idx + 1);
+                    }
+                };
+                const onEnded = () => {
+                    videoRef.current.removeEventListener('timeupdate', onTimeUpdate);
+                    videoRef.current.removeEventListener('ended', onEnded);
+                    playFromIdx(idx + 1);
+                };
+                videoRef.current.addEventListener('timeupdate', onTimeUpdate);
+                videoRef.current.addEventListener('ended', onEnded);
+                previewCleanup.current = () => {
+                    videoRef.current.removeEventListener('timeupdate', onTimeUpdate);
+                    videoRef.current.removeEventListener('ended', onEnded);
+                };
+            };
+            playFromIdx(targetIdx);
+            showSpeedOSD(`⏭ ${formatTime(time)}`);
+            return;
+        }
+        videoRef.current.currentTime = time;
+    };
 
     const handleAddSegment = (segment) => { setSegments([...segments, segment]); showToast('구간이 추가되었습니다'); };
     const handleDeleteSegment = (idx) => { setSegments(segments.filter((_, i) => i !== idx)); showToast('구간이 삭제되었습니다'); };
+
+    // 구간 미세 조절 (±1s, ±0.1s)
+    const handleUpdateSegment = (idx, field, delta) => {
+        setSegments(prev => prev.map((seg, i) => {
+            if (i !== idx) return seg;
+            const start = seg.startTime || seg.start || 0;
+            const end = seg.endTime || seg.end || 0;
+            if (field === 'start') {
+                const newStart = Math.max(0, Math.round((start + delta) * 10) / 10);
+                if (newStart >= end) return seg; // start < end 보장
+                return { ...seg, startTime: newStart, start: newStart };
+            } else {
+                const newEnd = Math.min(videoDuration || 99999, Math.round((end + delta) * 10) / 10);
+                if (newEnd <= start) return seg; // end > start 보장
+                return { ...seg, endTime: newEnd, end: newEnd };
+            }
+        }));
+        // 비디오 시간도 이동
+        if (videoRef.current) {
+            const seg = segments[idx];
+            const time = field === 'start'
+                ? Math.max(0, (seg.startTime || seg.start || 0) + delta)
+                : Math.max(0, (seg.endTime || seg.end || 0) + delta);
+            videoRef.current.currentTime = time;
+        }
+    };
+
+    // 구간 프리뷰 재생 (JS 기반, 구간들을 순서대로 재생)
+    const handlePreview = () => {
+        if (!videoRef.current || segments.length === 0) return;
+
+        // 이미 재생 중이면 중지
+        if (isPreviewPlaying) {
+            stopPreview();
+            videoRef.current.pause();
+            setIsPlaying(false);
+            showToast('Preview stopped', 'info');
+            return;
+        }
+
+        // 삭제 구간 → 보존 구간으로 반전 (실제 결과물 미리보기)
+        const keepSegments = invertSegments(segments, videoDuration);
+        if (keepSegments.length === 0) {
+            showToast('보존할 구간이 없습니다', 'error');
+            return;
+        }
+
+        setIsPreviewPlaying(true);
+        previewSegIdx.current = 0;
+
+        const playSegment = (idx) => {
+            if (idx >= keepSegments.length) {
+                // 모든 구간 재생 완료
+                videoRef.current.pause();
+                setIsPreviewPlaying(false);
+                previewSegIdx.current = -1;
+                showToast('Preview complete', 'success');
+                return;
+            }
+
+            const seg = keepSegments[idx];
+            videoRef.current.currentTime = seg.start;
+            videoRef.current.play();
+            previewSegIdx.current = idx;
+
+            const onTimeUpdate = () => {
+                if (videoRef.current && videoRef.current.currentTime >= seg.end) {
+                    videoRef.current.removeEventListener('timeupdate', onTimeUpdate);
+                    videoRef.current.removeEventListener('ended', onEnded);
+                    // 다음 구간으로
+                    playSegment(idx + 1);
+                }
+            };
+
+            const onEnded = () => {
+                videoRef.current.removeEventListener('timeupdate', onTimeUpdate);
+                videoRef.current.removeEventListener('ended', onEnded);
+                playSegment(idx + 1);
+            };
+
+            videoRef.current.addEventListener('timeupdate', onTimeUpdate);
+            videoRef.current.addEventListener('ended', onEnded);
+
+            // 클린업 함수 저장 (중간에 멈출 때)
+            previewCleanup.current = () => {
+                videoRef.current.removeEventListener('timeupdate', onTimeUpdate);
+                videoRef.current.removeEventListener('ended', onEnded);
+            };
+        };
+
+        showToast(`Preview: ${keepSegments.length} keep segments`, 'info');
+        playSegment(0);
+    };
     const handleAddSubtitle = (subtitle) => { setSubtitles([...subtitles, subtitle]); showToast('자막이 추가되었습니다'); };
-    const handleDeleteSubtitle = (idx) => { setSubtitles(subtitles.filter((_, i) => i !== idx)); showToast('자막이 삭제되었습니다'); };
+    const handleDeleteSubtitle = (idx) => {
+        setSubtitles(subtitles.filter((_, i) => i !== idx));
+        if (selectedSubtitleIdx === idx) setSelectedSubtitleIdx(null);
+        else if (selectedSubtitleIdx > idx) setSelectedSubtitleIdx(selectedSubtitleIdx - 1);
+        showToast('자막이 삭제되었습니다');
+    };
+
+    // 타임라인 마커 또는 자막 카드 클릭 → 영상 점프 + 자막 선택
+    const handleSelectSubtitle = (idx) => {
+        setSelectedSubtitleIdx(idx);
+        setActiveTab('subtitle');
+        const sub = subtitles[idx];
+        if (sub && videoRef.current) {
+            videoRef.current.currentTime = sub.startTime;
+            setCurrentTime(sub.startTime);
+        }
+    };
+
+    // 자막 싱크 미세 조절 (±delta를 start 또는 end에 적용)
+    const handleSubtitleTimeAdjust = (idx, field, delta) => {
+        setSubtitles(prev => prev.map((sub, i) => {
+            if (i !== idx) return sub;
+            const newVal = Math.max(0, Math.round(((field === 'start' ? sub.startTime : sub.endTime) + delta) * 10) / 10);
+            if (field === 'start') {
+                return { ...sub, startTime: Math.min(newVal, sub.endTime - 0.1) };
+            } else {
+                return { ...sub, endTime: Math.max(newVal, sub.startTime + 0.1) };
+            }
+        }));
+        // 조절 시 영상도 해당 시점으로 점프
+        const sub = subtitles[idx];
+        if (sub && videoRef.current) {
+            const targetTime = field === 'start'
+                ? Math.max(0, sub.startTime + delta)
+                : Math.max(0, sub.endTime + delta);
+            videoRef.current.currentTime = targetTime;
+            setCurrentTime(targetTime);
+        }
+    };
 
     const handleAnalyze = async () => {
         if (!videoFile) { showToast('먼저 비디오를 업로드하세요', 'error'); return; }
@@ -294,74 +1135,168 @@ const App = () => {
     const handleCut = async () => {
         if (segments.length === 0) { showToast('구간을 선택하세요', 'error'); return; }
         if (!uploadedFilePath) { showToast('영상을 먼저 업로드하세요', 'error'); return; }
+        // 삭제 구간 → 보존 구간으로 반전
+        const keepSegments = invertSegments(segments, videoDuration);
+        if (keepSegments.length === 0) { showToast('보존할 구간이 없습니다 (전체 삭제됨)', 'error'); return; }
         setIsExporting(true);
         setExportProgress(0);
         try {
             const response = await fetch(`${settings.serverUrl}/api/cut`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ file_path: uploadedFilePath, segments: segments.map(s => ({ start: s.start, end: s.end })) })
+                body: JSON.stringify({ file_path: uploadedFilePath, segments: keepSegments })
             });
             const data = await response.json();
-            if (data.success) showToast('구간 잘라내기 완료!', 'success');
-            else showToast(data.detail || '잘라내기 실패', 'error');
+            if (data.success && data.output_path) {
+                const filename = data.output_path.replace(/\\/g, '/').split('/').pop();
+                setExportResult({
+                    filename: filename,
+                    downloadUrl: `${settings.serverUrl}/api/download/${filename}`,
+                });
+                setActiveTab('export');
+                showToast('구간 잘라내기 완료! 내보내기 탭에서 다운로드', 'success');
+            } else {
+                showToast(data.detail || '잘라내기 실패', 'error');
+            }
         } catch (error) { showToast('오류: ' + error.message, 'error'); }
         finally { setIsExporting(false); setExportProgress(0); }
     };
 
     const handleExport = async (options) => {
-        if (!uploadedFilePath) { showToast('영상을 먼저 업로드하세요', 'error'); return; }
+        if (!uploadedFilePath && videoList.length === 0) {
+            showToast('영상을 먼저 업로드하세요', 'error'); return;
+        }
         setIsExporting(true);
         setExportProgress(5);
         setExportResult(null);
 
         try {
-            let targetFilePath = uploadedFilePath;
+            // 현재 활성 영상의 편집 상태를 videoList에 동기화
+            const currentList = videoList.map((v, i) => i === activeVideoIndex ? {
+                ...v,
+                cuts: segments.map(s => ({ start: s.startTime || s.start, end: s.endTime || s.end })),
+                subtitles: subtitles.map(s => ({ start: s.startTime, end: s.endTime, text: s.text })),
+            } : v);
 
-            if (subtitles.length > 0) {
-                setExportProgress(15);
-                const burnResponse = await fetch(`${settings.serverUrl}/api/subtitle`, {
+            const qualityMap = { '4k': 'high', '1080p': 'medium', '720p': 'low' };
+            const quality = qualityMap[options.quality] || 'medium';
+
+            if (currentList.length > 1) {
+                // ══════ 멀티 영상: 각 영상별 컷+자막 적용 → 병합 → 내보내기 ══════
+                showToast(`${currentList.length}개 영상 병합 내보내기 시작...`, 'info');
+                setExportProgress(10);
+
+                const videos = currentList.map(v => ({
+                    file_path: v.file_path,
+                    cuts: (v.cuts && v.cuts.length > 0) ? v.cuts : null,
+                    subtitles: (v.subtitles && v.subtitles.length > 0) ? v.subtitles : null,
+                }));
+
+                const res = await fetch(`${settings.serverUrl}/api/merge-export`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        file_path: uploadedFilePath,
-                        subtitles: subtitles.map(s => ({ start: s.startTime, end: s.endTime, text: s.text })),
+                        videos,
+                        output_name: (options.outputName || projectName || 'export').replace(/[^a-zA-Z0-9가-힣_-]/g, '_') + '.mp4',
+                        format: options.format,
+                        quality,
                     })
                 });
-                const burnData = await burnResponse.json();
-                if (burnData.success && burnData.output_path) {
-                    targetFilePath = burnData.output_path;
-                    setExportProgress(45);
+
+                const data = await res.json();
+                setExportProgress(100);
+
+                if (data.success) {
+                    setExportResult({
+                        filename: data.filename,
+                        downloadUrl: `${settings.serverUrl}${data.download_url}`,
+                    });
+                    showToast(`${currentList.length}개 영상 병합 내보내기 완료!`, 'success');
                 } else {
-                    showToast('자막 입히기 실패: ' + (burnData.detail || ''), 'error');
-                    setIsExporting(false);
-                    return;
+                    showToast('병합 내보내기 실패: ' + (data.detail || ''), 'error');
                 }
-            }
 
-            setExportProgress(55);
-            const exportResponse = await fetch(`${settings.serverUrl}/api/export`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    file_path: targetFilePath,
-                    format: options.format,
-                    quality: options.quality === '4k' ? 'high' : options.quality === '1080p' ? 'medium' : 'low',
-                })
-            });
-
-            const exportData = await exportResponse.json();
-            setExportProgress(100);
-
-            if (exportData.success && exportData.output_path) {
-                const filename = exportData.output_path.replace(/\\/g, '/').split('/').pop();
-                setExportResult({
-                    filename: filename,
-                    downloadUrl: `${settings.serverUrl}/api/download/${filename}`,
-                });
-                showToast('내보내기 완료!', 'success');
             } else {
-                showToast('내보내기 실패: ' + (exportData.detail || ''), 'error');
+                // ══════ 단일 영상: 기존 로직 (컷 → 자막 → 내보내기) ══════
+                let targetFilePath = uploadedFilePath;
+
+                if (segments.length > 0) {
+                    const keepSegments = invertSegments(segments, videoDuration);
+                    if (keepSegments.length === 0) {
+                        showToast('보존할 구간이 없습니다', 'error');
+                        setIsExporting(false); return;
+                    }
+                    setExportProgress(10);
+                    showToast('Step 1/3: 불필요 구간 제거 중...', 'info');
+                    const cutResponse = await fetch(`${settings.serverUrl}/api/cut`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ file_path: targetFilePath, segments: keepSegments })
+                    });
+                    const cutData = await cutResponse.json();
+                    if (cutData.success && cutData.output_path) {
+                        targetFilePath = cutData.output_path;
+                        setExportProgress(30);
+                    } else {
+                        showToast('구간 잘라내기 실패: ' + (cutData.detail || ''), 'error');
+                        setIsExporting(false); return;
+                    }
+                }
+
+                if (subtitles.length > 0) {
+                    setExportProgress(35);
+                    showToast('Step 2/3: 자막 입히기...', 'info');
+                    let exportSubtitles;
+                    if (segments.length > 0) {
+                        const keepSegments = invertSegments(segments, videoDuration);
+                        exportSubtitles = subtitles.map(s => ({
+                            start: mapOriginalToCutTime(s.startTime, keepSegments),
+                            end: mapOriginalToCutTime(s.endTime, keepSegments),
+                            text: s.text,
+                        }));
+                    } else {
+                        exportSubtitles = subtitles.map(s => ({ start: s.startTime, end: s.endTime, text: s.text }));
+                    }
+                    const burnResponse = await fetch(`${settings.serverUrl}/api/subtitle`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ file_path: targetFilePath, subtitles: exportSubtitles })
+                    });
+                    const burnData = await burnResponse.json();
+                    if (burnData.success && burnData.output_path) {
+                        targetFilePath = burnData.output_path;
+                        setExportProgress(55);
+                    } else {
+                        showToast('자막 입히기 실패: ' + (burnData.detail || ''), 'error');
+                        setIsExporting(false); return;
+                    }
+                }
+
+                setExportProgress(60);
+                showToast('Step 3/3: 최종 내보내기...', 'info');
+                const exportResponse = await fetch(`${settings.serverUrl}/api/export`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_path: targetFilePath,
+                        format: options.format,
+                        quality,
+                        output_name: options.outputName || '',
+                    })
+                });
+                const exportData = await exportResponse.json();
+                setExportProgress(100);
+
+                if (exportData.success && exportData.output_path) {
+                    const filename = exportData.output_path.replace(/\\/g, '/').split('/').pop();
+                    setExportResult({
+                        filename: filename,
+                        downloadUrl: `${settings.serverUrl}/api/download/${filename}`,
+                    });
+                    showToast('내보내기 완료!', 'success');
+                } else {
+                    showToast('내보내기 실패: ' + (exportData.detail || ''), 'error');
+                }
             }
         } catch (error) {
             showToast('오류: ' + error.message, 'error');
@@ -373,19 +1308,6 @@ const App = () => {
     // ========================================================================
     // Menu Handlers
     // ========================================================================
-
-    const handleNewProject = () => {
-        if (confirm('새 프로젝트를 시작합니다. 현재 작업이 초기화됩니다.')) {
-            setVideoFile(null);
-            setSegments([]);
-            setSubtitles([]);
-            setVisionSubtitles([]);
-            setRecommendations([]);
-            setExportResult(null);
-            setUploadedFilePath(null);
-            showToast('새 프로젝트 시작');
-        }
-    };
 
     const handleOpenVideo = () => {
         document.getElementById('fileInput').click();
@@ -402,30 +1324,40 @@ const App = () => {
     };
 
     // ========================================================================
-    // Render
+    // Render — 에디터 화면 (항상 바로 진입)
     // ========================================================================
-
     return (
-        <div className="app-container">
+        <div className="app-container" onContextMenu={(e) => e.preventDefault()}>
             {/* Android Studio 풍 메뉴바 */}
             <MenuBar
-                onNewProject={handleNewProject}
+                onNewProject={() => {
+                    const name = prompt('새 프로젝트 이름:');
+                    if (name && name.trim()) handleNewProject(name.trim());
+                }}
                 onOpenVideo={handleOpenVideo}
-                onSaveProject={() => showToast('프로젝트 저장 (준비 중)')}
+                onSaveProject={handleSaveProject}
                 onExport={() => setActiveTab('export')}
                 onSettings={() => setIsSettingsOpen(true)}
                 onToggleCrosshair={() => setShowCrosshair(!showCrosshair)}
                 showCrosshair={showCrosshair}
                 onAbout={handleAbout}
+                onShowProjects={() => { loadProjectList(); setShowProjectPanel(!showProjectPanel); }}
             />
 
             {/* 헤더 */}
             <header className="header">
-                <div className="header-title">CutSense</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div className="header-title">CutSense</div>
+                    {projectName && (
+                        <span style={{ fontSize: '12px', color: '#A9B7C6', fontWeight: 600, padding: '2px 8px', background: '#2B2B2B', borderRadius: '3px', border: '1px solid #515658' }}>
+                            {projectName}
+                        </span>
+                    )}
+                </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     {videoFile && (
                         <span style={{ fontSize: '11px', color: '#6b6b8a', marginRight: '8px' }}>
-                            {videoFile.name}
+                            {videoFile.name} {videoList.length > 1 ? `(${activeVideoIndex + 1}/${videoList.length})` : ''}
                         </span>
                     )}
                     <button
@@ -446,55 +1378,209 @@ const App = () => {
                                 className={`drop-zone ${dragOver ? 'dragover' : ''}`}
                                 onDragOver={handleDragOver}
                                 onDragLeave={handleDragLeave}
-                                onDrop={handleDrop}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    setDragOver(false);
+                                    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('video/'));
+                                    if (files.length > 0) handleAddVideosGate(files);
+                                }}
                                 onClick={() => document.getElementById('fileInput').click()}
                             >
                                 <div style={{ fontSize: '24px' }}>📹</div>
                                 <div className="drop-zone-text">
-                                    비디오 파일을 드래그하거나 클릭하여 업로드
+                                    비디오 파일을 드래그하거나 클릭하여 업로드<br/>
+                                    <span style={{ fontSize: '11px', color: '#808080' }}>여러 파일 동시 선택 가능</span>
                                 </div>
                                 <input
                                     id="fileInput"
                                     type="file"
                                     accept="video/*"
-                                    onChange={handleFileSelect}
+                                    multiple
+                                    onChange={(e) => {
+                                        const files = Array.from(e.target.files);
+                                        if (files.length > 0) handleAddVideosGate(files);
+                                    }}
                                     style={{ display: 'none' }}
                                 />
                             </div>
                         ) : (
-                            <div style={{ position: 'relative', width: '100%' }}>
+                            <div style={{ position: 'relative', width: '100%' }}
+                                onContextMenu={(e) => e.preventDefault()}
+                            >
                                 <video
                                     ref={videoRef}
                                     className="video-player"
                                     src={videoFile?.url}
-                                    controls
+                                    onClick={(e) => e.preventDefault()}
                                     onLoadedMetadata={handleLoadedMetadata}
                                     onTimeUpdate={handleTimeUpdate}
                                     onEnded={() => setIsPlaying(false)}
                                     onPlay={() => setIsPlaying(true)}
                                     onPause={() => setIsPlaying(false)}
                                 />
-                                {/* 십자선 가이드 오버레이 */}
+                                {/* 십자선 인터랙션 오버레이 */}
                                 {showCrosshair && (
-                                    <div style={{
+                                    <div ref={crosshairRef} style={{
                                         position: 'absolute',
-                                        top: 0, left: 0, right: 0, bottom: '40px',
-                                        pointerEvents: 'none',
-                                        zIndex: 5
-                                    }}>
+                                        top: 0, left: 0, right: 0, bottom: 0,
+                                        pointerEvents: 'auto',
+                                        zIndex: 5,
+                                        cursor: 'crosshair'
+                                    }}
+                                    onClick={handleOverlayClick}
+                                    onContextMenu={handleOverlayRightClick}
+                                    >
+                                        {/* 4분할 라벨 (위치 가이드) */}
+                                        {[
+                                            { key: 'br', pos: { bottom: '8px', right: '12px' },
+                                              label: isCutting ? '✂ 제거 END' : '✂ 제거 START' }
+                                        ].map(q => (
+                                            <div key={q.key} style={{
+                                                position: 'absolute', ...q.pos,
+                                                pointerEvents: 'none'
+                                            }}>
+                                                <span style={{
+                                                    color: labelColors[q.key],
+                                                    background: labelColors[q.key] === '#1E1E1E'
+                                                        ? 'rgba(255,255,255,0.75)'
+                                                        : 'rgba(0,0,0,0.6)',
+                                                    padding: '3px 10px',
+                                                    borderRadius: '3px',
+                                                    fontSize: '11px',
+                                                    fontWeight: 700,
+                                                    letterSpacing: '0.5px',
+                                                    userSelect: 'none',
+                                                    transition: 'all 0.3s ease',
+                                                    border: isCutting
+                                                        ? '1px solid #FF6B6B'
+                                                        : '1px solid rgba(204,120,50,0.3)',
+                                                    animation: isCutting
+                                                        ? 'cutPulse 1s infinite' : 'none'
+                                                }}>
+                                                    {q.label}
+                                                </span>
+                                            </div>
+                                        ))}
+                                        {/* 배속 + 조작법 라벨 (좌상단) */}
+                                        <div style={{
+                                            position: 'absolute', top: '8px', left: '12px',
+                                            pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: '4px'
+                                        }}>
+                                            <span style={{
+                                                color: labelColors.tl,
+                                                background: labelColors.tl === '#1E1E1E'
+                                                    ? 'rgba(255,255,255,0.75)'
+                                                    : 'rgba(0,0,0,0.6)',
+                                                padding: '3px 10px',
+                                                borderRadius: '3px',
+                                                fontSize: '11px',
+                                                fontWeight: 700,
+                                                userSelect: 'none',
+                                                border: playbackRate < 1 ? '1px solid #6A9955' : '1px solid rgba(204,120,50,0.3)',
+                                                transition: 'all 0.3s ease'
+                                            }}>
+                                                {playbackRate < 1 ? `🐢 x${playbackRate}` : `▶ x${playbackRate}`}
+                                            </span>
+                                        </div>
+                                        {/* 조작 가이드 (우상단) */}
+                                        <div style={{
+                                            position: 'absolute', top: '8px', right: '12px',
+                                            pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end'
+                                        }}>
+                                            {[
+                                                'L-Click: Cut',
+                                                'R-Click: Speed',
+                                                '← →: 5s Skip',
+                                                'Space: Play/Pause'
+                                            ].map((txt, i) => (
+                                                <span key={i} style={{
+                                                    color: labelColors.tr,
+                                                    background: labelColors.tr === '#1E1E1E'
+                                                        ? 'rgba(255,255,255,0.6)'
+                                                        : 'rgba(0,0,0,0.5)',
+                                                    padding: '1px 6px',
+                                                    borderRadius: '2px',
+                                                    fontSize: '9px',
+                                                    fontWeight: 600,
+                                                    userSelect: 'none',
+                                                    opacity: 0.7
+                                                }}>
+                                                    {txt}
+                                                </span>
+                                            ))}
+                                        </div>
+                                        {/* 배속 OSD (화면 중앙, 잠깐 떴다 사라짐) */}
+                                        {speedOSD && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                top: '50%', left: '50%',
+                                                transform: 'translate(-50%, -50%)',
+                                                color: '#FFC66D',
+                                                background: 'rgba(0,0,0,0.7)',
+                                                padding: '12px 24px',
+                                                borderRadius: '8px',
+                                                fontSize: '24px',
+                                                fontWeight: 800,
+                                                pointerEvents: 'none',
+                                                animation: 'slideIn 0.2s ease'
+                                            }}>
+                                                {speedOSD}
+                                            </div>
+                                        )}
+                                        {/* 컷 스톱워치 (진행 중: 실시간 / 완료: 점멸) */}
+                                        {(isCutting || cutFlash !== null) && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: '50px', left: '50%',
+                                                transform: 'translateX(-50%)',
+                                                pointerEvents: 'none',
+                                                zIndex: 8,
+                                                display: 'flex', alignItems: 'center', gap: '8px',
+                                                background: isCutting
+                                                    ? 'rgba(255,60,60,0.85)'
+                                                    : 'rgba(106,153,85,0.85)',
+                                                padding: '6px 16px',
+                                                borderRadius: '20px',
+                                                boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+                                                animation: cutFlash !== null ? 'cutBlink 0.4s ease infinite' : 'none',
+                                            }}>
+                                                <span style={{
+                                                    display: 'inline-block',
+                                                    width: '8px', height: '8px',
+                                                    borderRadius: '50%',
+                                                    background: isCutting ? '#FF6B6B' : '#6A9955',
+                                                    animation: isCutting ? 'cutPulse 1s infinite' : 'none',
+                                                }} />
+                                                <span style={{
+                                                    color: '#fff',
+                                                    fontSize: '16px',
+                                                    fontWeight: 800,
+                                                    fontFamily: 'monospace',
+                                                    letterSpacing: '1px',
+                                                }}>
+                                                    {isCutting
+                                                        ? `✂ ${cutElapsed.toFixed(1)}s`
+                                                        : `✓ ${cutFlash.toFixed(1)}s`
+                                                    }
+                                                </span>
+                                            </div>
+                                        )}
+                                        {/* 십자선 */}
                                         <div style={{
                                             position: 'absolute',
                                             top: '50%', left: 0, right: 0,
                                             height: '1px',
                                             background: 'rgba(204, 120, 50, 0.3)',
-                                            borderTop: '1px dashed rgba(204, 120, 50, 0.4)'
+                                            borderTop: '1px dashed rgba(204, 120, 50, 0.4)',
+                                            pointerEvents: 'none'
                                         }} />
                                         <div style={{
                                             position: 'absolute',
                                             left: '50%', top: 0, bottom: 0,
                                             width: '1px',
                                             background: 'rgba(204, 120, 50, 0.3)',
-                                            borderLeft: '1px dashed rgba(204, 120, 50, 0.4)'
+                                            borderLeft: '1px dashed rgba(204, 120, 50, 0.4)',
+                                            pointerEvents: 'none'
                                         }} />
                                         <div style={{
                                             position: 'absolute',
@@ -503,7 +1589,8 @@ const App = () => {
                                             width: '8px', height: '8px',
                                             borderRadius: '50%',
                                             background: '#CC7832',
-                                            boxShadow: '0 0 6px rgba(204, 120, 50, 0.6)'
+                                            boxShadow: '0 0 6px rgba(204, 120, 50, 0.6)',
+                                            pointerEvents: 'none'
                                         }} />
                                     </div>
                                 )}
@@ -554,13 +1641,93 @@ const App = () => {
                     </div>
 
                     {videoFile && (
-                        <div className="controls">
+                        <div className="controls" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <button className="control-button primary" onClick={handlePlay}>
                                 {isPlaying ? '⏸️ 일시정지' : '▶️ 재생'}
                             </button>
                             <div className="time-display">
                                 {formatTime(currentTime)} / {formatTime(videoDuration)}
                             </div>
+                            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <button
+                                    onClick={handleMuteToggle}
+                                    style={{
+                                        background: 'none', border: 'none', cursor: 'pointer',
+                                        fontSize: '16px', padding: '4px', color: '#A9B7C6',
+                                    }}
+                                    title={isMuted ? '음소거 해제' : '음소거'}
+                                >
+                                    {isMuted || volume === 0 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}
+                                </button>
+                                <input
+                                    type="range"
+                                    min="0" max="1" step="0.05"
+                                    value={isMuted ? 0 : volume}
+                                    onChange={(e) => handleVolumeChange(e.target.value)}
+                                    style={{
+                                        width: '80px', height: '4px',
+                                        accentColor: '#CC7832', cursor: 'pointer',
+                                    }}
+                                    title={`볼륨 ${Math.round((isMuted ? 0 : volume) * 100)}%`}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 영상 목록 (멀티 영상) */}
+                    {videoList.length > 0 && (
+                        <div style={{
+                            background: '#3C3F41', borderTop: '1px solid #515658',
+                            padding: '6px 8px', display: 'flex', gap: '6px',
+                            overflowX: 'auto', flexShrink: 0, alignItems: 'center'
+                        }}>
+                            {videoList.map((v, idx) => (
+                                <div key={idx}
+                                    draggable
+                                    onDragStart={() => handleVideoDragStart(idx)}
+                                    onDragOver={(e) => handleVideoDragOver(e, idx)}
+                                    onDrop={() => handleVideoDrop(idx)}
+                                    onClick={() => handleSwitchVideo(idx)}
+                                    style={{
+                                        background: idx === activeVideoIndex ? '#365880' : '#2B2B2B',
+                                        border: `1px solid ${idx === activeVideoIndex ? '#4A6D8C' : '#515658'}`,
+                                        borderRadius: '4px', padding: '4px 10px',
+                                        cursor: 'grab', userSelect: 'none', flexShrink: 0,
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    <span style={{ fontSize: '10px', color: '#CC7832', fontWeight: 700 }}>{idx + 1}</span>
+                                    <span style={{
+                                        fontSize: '11px', color: idx === activeVideoIndex ? '#DCDCDC' : '#A9B7C6',
+                                        maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                    }}>
+                                        {v.original_filename || `Video ${idx + 1}`}
+                                    </span>
+                                </div>
+                            ))}
+                            <button
+                                onClick={() => document.getElementById('addVideoInput').click()}
+                                style={{
+                                    background: 'none', border: '1px dashed #515658', borderRadius: '4px',
+                                    color: '#808080', padding: '4px 10px', cursor: 'pointer', fontSize: '11px',
+                                    flexShrink: 0
+                                }}
+                            >
+                                + Add
+                            </button>
+                            <input
+                                id="addVideoInput"
+                                type="file"
+                                accept="video/*"
+                                multiple
+                                onChange={(e) => {
+                                    const files = Array.from(e.target.files);
+                                    if (files.length > 0) handleAddVideosGate(files);
+                                    e.target.value = '';
+                                }}
+                                style={{ display: 'none' }}
+                            />
                         </div>
                     )}
                 </div>
@@ -588,7 +1755,10 @@ const App = () => {
                             videoRef={videoRef}
                             onAddSegment={handleAddSegment}
                             onDeleteSegment={handleDeleteSegment}
+                            onUpdateSegment={handleUpdateSegment}
                             onCut={handleCut}
+                            onPreview={handlePreview}
+                            isPreviewPlaying={isPreviewPlaying}
                             hasVideo={!!videoFile}
                             duration={videoDuration}
                         />
@@ -598,11 +1768,19 @@ const App = () => {
                         <SubtitleTab
                             subtitles={subtitles}
                             onAddSubtitle={handleAddSubtitle}
-                            onUpdateSubtitle={() => {}}
+                            onUpdateSubtitle={(idx, updated) => {
+                                const newSubs = [...subtitles];
+                                newSubs[idx] = updated;
+                                setSubtitles(newSubs);
+                                showToast(`자막 #${idx + 1} 수정됨`);
+                            }}
                             onDeleteSubtitle={handleDeleteSubtitle}
                             onApplySubtitles={() => {}}
                             onClearSubtitles={handleClearSubtitles}
                             videoRef={videoRef}
+                            selectedSubtitleIdx={selectedSubtitleIdx}
+                            onSelectSubtitle={handleSelectSubtitle}
+                            onTimeAdjust={handleSubtitleTimeAdjust}
                         />
                     )}
 
@@ -620,6 +1798,8 @@ const App = () => {
                             onApplyVisionSubtitles={handleApplyVisionSubtitles}
                             videoFile={videoFile}
                             visionStage={visionStage}
+                            segmentCount={segments.length}
+                            videoDuration={videoDuration}
                         />
                     )}
 
@@ -630,7 +1810,10 @@ const App = () => {
                             exportProgress={exportProgress}
                             hasVideo={!!videoFile}
                             subtitleCount={subtitles.length}
+                            segmentCount={segments.length}
                             exportResult={exportResult}
+                            videoCount={videoList.length}
+                            projectName={projectName}
                         />
                     )}
                 </div>
@@ -650,25 +1833,256 @@ const App = () => {
                     </div>
                     <Timeline
                         segments={segments}
+                        subtitles={subtitles}
+                        activeTab={activeTab}
                         duration={videoDuration}
                         videoRef={videoRef}
                         onSeek={handleSeek}
                         zoom={zoom}
+                        selectedSubtitleIdx={selectedSubtitleIdx}
+                        onSelectSubtitle={handleSelectSubtitle}
                     />
                 </div>
             )}
 
             {/* 상태 바 (Android Studio 풍) */}
             <div className="status-bar">
-                <span>
-                    {videoFile ? `📹 ${videoFile.name}` : '대기 중'}
-                    {subtitles.length > 0 && ` | 💬 자막 ${subtitles.length}개`}
-                    {segments.length > 0 && ` | ✂️ 구간 ${segments.length}개`}
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span
+                        onClick={() => { loadProjectList(); setShowProjectPanel(!showProjectPanel); }}
+                        style={{ cursor: 'pointer', color: '#CC7832', fontWeight: 600, borderRight: '1px solid #515658', paddingRight: '8px' }}
+                        title="Open project list"
+                    >
+                        {projectName || 'No Project'}
+                    </span>
+                    <span>
+                        {videoFile ? `📹 ${videoFile.name}` : '대기 중'}
+                        {subtitles.length > 0 && ` | 💬 자막 ${subtitles.length}개`}
+                        {segments.length > 0 && ` | ✂️ 구간 ${segments.length}개`}
+                    </span>
                 </span>
-                <span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {needFullscreen && (
+                        <span
+                            onClick={() => {
+                                const el = document.documentElement;
+                                if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+                            }}
+                            style={{ color: '#FFC66D', cursor: 'pointer', fontWeight: 600, fontSize: '11px', padding: '1px 6px', background: '#3C3F41', borderRadius: '3px', border: '1px solid #515658' }}
+                        >
+                            Fullscreen
+                        </span>
+                    )}
+                    {autoSaveStatus && <span style={{ color: autoSaveStatus === 'saved' ? '#6A9955' : '#808080', marginRight: '8px', fontSize: '10px' }}>{autoSaveStatus === 'saved' ? 'Auto-saved' : 'Saving...'}</span>}
                     CutSense v0.2 | Port 9000
                 </span>
             </div>
+
+            {/* ============================================================
+                프로젝트 관리 화면 (전용 모달)
+               ============================================================ */}
+            {showProjectPanel && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'rgba(0,0,0,0.6)',
+                }}
+                    onClick={() => { setShowProjectPanel(false); setContextMenu(null); }}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            width: '560px', maxHeight: '80vh',
+                            background: '#2B2B2B', border: '1px solid #515658',
+                            borderRadius: '12px', display: 'flex', flexDirection: 'column',
+                            boxShadow: '0 16px 48px rgba(0,0,0,0.7)',
+                            overflow: 'hidden',
+                        }}
+                    >
+                        {/* 헤더 */}
+                        <div style={{
+                            padding: '20px 24px 16px', borderBottom: '1px solid #515658',
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        }}>
+                            <div>
+                                <div style={{ fontSize: '18px', fontWeight: 700, color: '#FFC66D' }}>프로젝트 관리</div>
+                                <div style={{ fontSize: '11px', color: '#808080', marginTop: '4px' }}>
+                                    {projectList.length}개 프로젝트 · 저장 경로: ./projects/
+                                </div>
+                            </div>
+                            <span
+                                onClick={() => setShowProjectPanel(false)}
+                                style={{ color: '#808080', cursor: 'pointer', fontSize: '22px', lineHeight: 1, padding: '4px' }}
+                            >×</span>
+                        </div>
+
+                        {/* 새 프로젝트 생성 바 */}
+                        <div style={{ padding: '14px 24px', borderBottom: '1px solid #3C3F41', background: '#313335' }}>
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                                <input
+                                    id="newProjectInput"
+                                    type="text"
+                                    placeholder="새 프로젝트 이름을 입력하세요..."
+                                    defaultValue=""
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && e.target.value.trim()) {
+                                            handleNewProject(e.target.value.trim());
+                                            e.target.value = '';
+                                        }
+                                    }}
+                                    style={{
+                                        flex: 1, background: '#2B2B2B', border: '1px solid #515658',
+                                        borderRadius: '6px', padding: '10px 14px', color: '#A9B7C6',
+                                        fontSize: '13px', outline: 'none',
+                                    }}
+                                />
+                                <button
+                                    onClick={() => {
+                                        const input = document.getElementById('newProjectInput');
+                                        const val = input?.value?.trim();
+                                        if (val) { handleNewProject(val); input.value = ''; }
+                                    }}
+                                    style={{
+                                        background: '#365880', color: '#fff', border: 'none',
+                                        borderRadius: '6px', padding: '10px 18px', fontSize: '13px',
+                                        fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.background = '#4A7DAA'; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.background = '#365880'; }}
+                                >+ 새 프로젝트</button>
+                            </div>
+                        </div>
+
+                        {/* 프로젝트 목록 */}
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+                            {projectList.length === 0 ? (
+                                <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                                    <div style={{ fontSize: '32px', marginBottom: '12px' }}>📁</div>
+                                    <div style={{ color: '#808080', fontSize: '14px' }}>아직 저장된 프로젝트가 없습니다</div>
+                                    <div style={{ color: '#606060', fontSize: '12px', marginTop: '4px' }}>위에서 새 프로젝트를 만들어보세요</div>
+                                </div>
+                            ) : (
+                                projectList.map(p => {
+                                    const isCurrent = p.id === projectId;
+                                    return (
+                                        <div key={p.id} style={{
+                                            background: isCurrent ? '#1E3A5F' : '#3C3F41',
+                                            border: `1px solid ${isCurrent ? '#4A6D8C' : '#515658'}`,
+                                            borderRadius: '8px', padding: '14px 16px',
+                                            marginBottom: '8px', transition: 'all 0.15s',
+                                            display: 'flex', alignItems: 'center', gap: '14px',
+                                        }}
+                                            onMouseEnter={(e) => { if (!isCurrent) e.currentTarget.style.borderColor = '#CC7832'; }}
+                                            onMouseLeave={(e) => { if (!isCurrent) e.currentTarget.style.borderColor = '#515658'; }}
+                                        >
+                                            {/* 프로젝트 아이콘 */}
+                                            <div style={{
+                                                width: '40px', height: '40px', borderRadius: '8px',
+                                                background: isCurrent ? '#365880' : '#2B2B2B',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontSize: '18px', flexShrink: 0,
+                                            }}>
+                                                {isCurrent ? '📂' : '📁'}
+                                            </div>
+
+                                            {/* 프로젝트 정보 — 클릭하면 열기 */}
+                                            <div
+                                                style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}
+                                                onClick={() => { handleOpenProject(p.id); setShowProjectPanel(false); }}
+                                            >
+                                                <div style={{
+                                                    fontSize: '14px', fontWeight: 600,
+                                                    color: isCurrent ? '#FFC66D' : '#DCDCDC',
+                                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                }}>
+                                                    {p.name}
+                                                    {isCurrent && (
+                                                        <span style={{
+                                                            fontSize: '10px', color: '#6A8759', fontWeight: 700,
+                                                            marginLeft: '8px', verticalAlign: 'middle',
+                                                        }}>● 현재</span>
+                                                    )}
+                                                </div>
+                                                <div style={{
+                                                    fontSize: '11px', color: '#808080', marginTop: '4px',
+                                                    display: 'flex', gap: '12px',
+                                                }}>
+                                                    <span>{p.video_count || 0} videos</span>
+                                                    <span>{p.updated_at ? new Date(p.updated_at).toLocaleDateString() : ''}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* 액션 버튼들 — 항상 보임 */}
+                                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                                {/* 열기 */}
+                                                <button
+                                                    onClick={() => { handleOpenProject(p.id); setShowProjectPanel(false); }}
+                                                    style={{
+                                                        background: '#365880', color: '#A9B7C6', border: 'none',
+                                                        borderRadius: '6px', padding: '6px 12px', fontSize: '12px',
+                                                        cursor: 'pointer', fontWeight: 600,
+                                                    }}
+                                                    onMouseEnter={(e) => { e.currentTarget.style.background = '#4A7DAA'; }}
+                                                    onMouseLeave={(e) => { e.currentTarget.style.background = '#365880'; }}
+                                                >열기</button>
+                                                {/* 삭제 */}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm(`프로젝트 "${p.name}"을(를) 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) {
+                                                            fetch(`${settings.serverUrl}/api/projects/${p.id}`, { method: 'DELETE' })
+                                                                .then(res => res.json())
+                                                                .then(data => {
+                                                                    if (data.success) {
+                                                                        loadProjectList();
+                                                                        if (p.id === projectId) {
+                                                                            setProjectId(null);
+                                                                            setProjectName('');
+                                                                            setSegments([]);
+                                                                            setSubtitles([]);
+                                                                            setVideoList([]);
+                                                                            setVideoFile(null);
+                                                                        }
+                                                                        showToast(`프로젝트 "${p.name}" 삭제됨`);
+                                                                    }
+                                                                })
+                                                                .catch(() => showToast('삭제 실패', 'error'));
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        background: '#5C2020', color: '#F08080', border: 'none',
+                                                        borderRadius: '6px', padding: '6px 12px', fontSize: '12px',
+                                                        cursor: 'pointer', fontWeight: 600,
+                                                    }}
+                                                    onMouseEnter={(e) => { e.currentTarget.style.background = '#7F2020'; e.currentTarget.style.color = '#FCA5A5'; }}
+                                                    onMouseLeave={(e) => { e.currentTarget.style.background = '#5C2020'; e.currentTarget.style.color = '#F08080'; }}
+                                                >삭제</button>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {/* 하단 — 닫기 */}
+                        <div style={{
+                            padding: '12px 24px', borderTop: '1px solid #515658',
+                            display: 'flex', justifyContent: 'flex-end',
+                        }}>
+                            <button
+                                onClick={() => setShowProjectPanel(false)}
+                                style={{
+                                    background: '#3C3F41', color: '#A9B7C6', border: '1px solid #515658',
+                                    borderRadius: '6px', padding: '8px 20px', fontSize: '13px',
+                                    cursor: 'pointer', fontWeight: 600,
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#CC7832'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#515658'; }}
+                            >닫기</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* 모달 */}
             <SettingsModal
@@ -678,6 +2092,103 @@ const App = () => {
                 onSettingsChange={setSettings}
                 onSaveSettings={() => {}}
             />
+
+            {/* 프로젝트 생성 모달 */}
+            {showNewProjectModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.6)', zIndex: 600,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                    <div style={{
+                        background: '#2B2B2B', border: '1px solid #515658', borderRadius: '10px',
+                        padding: '28px 32px', width: '420px',
+                        boxShadow: '0 12px 40px rgba(0,0,0,0.7)',
+                    }}>
+                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#FFC66D', marginBottom: '20px' }}>
+                            New Project
+                        </div>
+
+                        {/* 프로젝트 이름 */}
+                        <div style={{ marginBottom: '16px' }}>
+                            <div style={{ fontSize: '11px', color: '#808080', marginBottom: '6px' }}>Project Name</div>
+                            <input
+                                type="text"
+                                autoFocus
+                                placeholder="My video project..."
+                                value={newProjectName}
+                                onChange={(e) => setNewProjectName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleNewProjectConfirm()}
+                                style={{
+                                    width: '100%', boxSizing: 'border-box',
+                                    background: '#3C3F41', border: '1px solid #515658', borderRadius: '4px',
+                                    padding: '10px 14px', color: '#A9B7C6', fontSize: '14px', outline: 'none',
+                                }}
+                            />
+                        </div>
+
+                        {/* 프로젝트 타입 */}
+                        <div style={{ marginBottom: '20px' }}>
+                            <div style={{ fontSize: '11px', color: '#808080', marginBottom: '8px' }}>Project Type</div>
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                                <div
+                                    onClick={() => setNewProjectType('single')}
+                                    style={{
+                                        flex: 1, padding: '12px', borderRadius: '6px', cursor: 'pointer',
+                                        background: newProjectType === 'single' ? '#365880' : '#3C3F41',
+                                        border: `1px solid ${newProjectType === 'single' ? '#4A6D8C' : '#515658'}`,
+                                        textAlign: 'center', transition: 'all 0.15s',
+                                    }}
+                                >
+                                    <div style={{ fontSize: '20px', marginBottom: '4px' }}>📹</div>
+                                    <div style={{ fontSize: '12px', color: '#A9B7C6', fontWeight: 600 }}>Single Video</div>
+                                    <div style={{ fontSize: '10px', color: '#808080', marginTop: '2px' }}>영상 1개 편집</div>
+                                </div>
+                                <div
+                                    onClick={() => setNewProjectType('multi')}
+                                    style={{
+                                        flex: 1, padding: '12px', borderRadius: '6px', cursor: 'pointer',
+                                        background: newProjectType === 'multi' ? '#365880' : '#3C3F41',
+                                        border: `1px solid ${newProjectType === 'multi' ? '#4A6D8C' : '#515658'}`,
+                                        textAlign: 'center', transition: 'all 0.15s',
+                                    }}
+                                >
+                                    <div style={{ fontSize: '20px', marginBottom: '4px' }}>🎬</div>
+                                    <div style={{ fontSize: '12px', color: '#A9B7C6', fontWeight: 600 }}>Multi Video</div>
+                                    <div style={{ fontSize: '10px', color: '#808080', marginTop: '2px' }}>여러 영상 합치기</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 저장 경로 안내 */}
+                        <div style={{ fontSize: '10px', color: '#606060', marginBottom: '16px' }}>
+                            Save path: ./projects/{newProjectName ? newProjectName.replace(/[^a-zA-Z0-9가-힣_-]/g, '_') : '...'}.json
+                        </div>
+
+                        {/* 버튼 */}
+                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={() => { setShowNewProjectModal(false); pendingFilesRef.current = null; }}
+                                style={{
+                                    background: '#3C3F41', color: '#A9B7C6', border: '1px solid #515658',
+                                    borderRadius: '4px', padding: '8px 20px', fontSize: '12px', cursor: 'pointer',
+                                }}
+                            >Cancel</button>
+                            <button
+                                onClick={handleNewProjectConfirm}
+                                disabled={!newProjectName.trim()}
+                                style={{
+                                    background: newProjectName.trim() ? '#365880' : '#4C5052',
+                                    color: newProjectName.trim() ? '#FFC66D' : '#808080',
+                                    border: '1px solid #515658', borderRadius: '4px',
+                                    padding: '8px 20px', fontSize: '12px', fontWeight: 700,
+                                    cursor: newProjectName.trim() ? 'pointer' : 'not-allowed',
+                                }}
+                            >Create & Start</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {toast && (
                 <Toast

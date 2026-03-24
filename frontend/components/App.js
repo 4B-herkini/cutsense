@@ -487,20 +487,23 @@ const App = () => {
         }
 
         const estFrames = Math.ceil(analysisDuration / 5);
-        const estCalls = 1 + Math.ceil(estFrames / 12);
-        const estCost = (estCalls * 0.025).toFixed(2);
+        // 3-Pass: Pass1(1회) + Pass2(프레임/16 배치) + Pass3(장면당 1회, ~프레임/3 예상)
+        const estPass2Batches = Math.ceil(estFrames / 16);
+        const estScenes = Math.ceil(estFrames / 3);  // 대략 15초당 1장면
+        const estCalls = 1 + estPass2Batches + estScenes;
+        const estCost = (estCalls * 0.02).toFixed(2);
 
         const cutInfo = segments.length > 0
             ? `컷 ${segments.length}개 제거 → 보존 구간만 분석 (${formatTime(analysisDuration)})\n`
             : `원본 영상 전체 (${formatTime(analysisDuration)})\n`;
 
         if (!confirm(
-            `[AI Vision 자막 생성]\n\n` +
+            `[AI Vision 3-Pass 자막 생성]\n\n` +
             `${cutInfo}` +
-            `AI가 화면을 5초 간격으로 캡처해서 직접 보고,\n` +
-            `장면 전환을 감지해 자연스러운 자막을 만듭니다.\n\n` +
+            `AI가 3단계로 분석합니다:\n` +
+            `① 맥락 파악 → ② 장면 경계 감지 → ③ 자막 생성\n\n` +
             `예상 프레임: ${estFrames}장 (5초 간격)\n` +
-            `예상 API 호출: ${estCalls}회\n` +
+            `예상 API 호출: ~${estCalls}회 (3-Pass)\n` +
             `예상 비용: ~$${estCost}\n\n` +
             `진행하시겠습니까?`
         )) return;

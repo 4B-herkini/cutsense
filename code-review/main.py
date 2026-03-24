@@ -515,7 +515,8 @@ async def generate_vision_subtitles(request: VisionSubtitleRequest) -> dict:
             keep_segs = [{"start": s.start, "end": s.end} for s in request.keep_segments]
         frames = video_processor.extract_frames(file_path, SMART_INTERVAL, keep_segments=keep_segs)
 
-        # Step 2: 2-Pass Smart Analysis
+        # Step 2: 3-Pass Smart Analysis (v0.4)
+        # Pass 1: 맥락 파악, Pass 2: 장면 경계 감지, Pass 3: 자막 생성
         subtitles = ai_service.analyze_frames_for_subtitles(frames, style=request.style or "portfolio")
 
         # Step 3: Cleanup extracted frames
@@ -530,7 +531,7 @@ async def generate_vision_subtitles(request: VisionSubtitleRequest) -> dict:
             "success": True,
             "subtitles": subtitles,
             "frame_count": len(frames),
-            "message": f"스마트 분석 완료! {len(subtitles)}개 자막 생성 (2-Pass AI, 3초 간격)",
+            "message": f"3-Pass 분석 완료! {len(subtitles)}개 자막 생성 ({len(frames)}프레임 분석)",
         }
 
     except HTTPException:

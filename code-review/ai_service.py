@@ -406,23 +406,31 @@ Return ONLY valid JSON, no other text.
         self, frame_paths: List[Dict[str, any]], progress_callback=None, style: str = "portfolio"
     ) -> List[Dict]:
         """
-        2-Pass Smart Subtitle Generation — CutSense 핵심 기능.
+        3-Pass Smart Subtitle Generation — CutSense v0.4 핵심 기능.
 
         Pass 1: 전체 프레임을 샘플링해서 영상의 전체 맥락 파악
-        Pass 2: 맥락을 알고 있는 상태에서 장면 전환 감지 + 스마트 자막 생성
+        Pass 2: 전체 프레임으로 장면 경계(화면 전환 시점) 감지 — "언제 바뀌는지"만
+        Pass 3: 감지된 장면 구간별로 자막 텍스트 생성 — "뭐라고 쓸지"만
+
+        v0.4 변경: 기존 Pass 2가 장면 감지+자막 생성을 동시에 하던 것을 분리.
+        각 Pass가 하나의 역할만 하므로 AI 정확도 향상.
 
         Args:
             frame_paths: List of {path, timestamp, duration} dicts
             progress_callback: Optional callback(stage, progress_pct, message)
+            style: Subtitle style key
 
         Returns:
             List of subtitle dicts: [{start, end, text}]
         """
+        if not frame_paths:
+            return []
+
         if progress_callback:
             progress_callback("pass1", 0, "1단계: 영상 전체 맥락 파악 중...")
 
-        # ── Pass 1: 전체 맥락 파악 (매 10번째 프레임 샘플링) ──
-        sample_step = max(1, len(frame_paths) // 8)  # 최대 8장 샘플
+        # ── Pass 1: 전체 맥락 파악 (최대 8장 샘플) ──
+        sample_step = max(1, len(frame_paths) // 8)
         sampled = frame_paths[::sample_step][:8]
 
         context = self._pass1_get_context(sampled)
@@ -430,12 +438,12 @@ Return ONLY valid JSON, no other text.
         if progress_callback:
             progress_callback("pass1", 100, f"맥락 파악 완료: {context[:50]}...")
 
-        # ── Pass 2: 스마트 자막 생성 (배치 처리) ──
+        # ── Pass 2: 장면 경계 감지 (배치 처리) ──
         if progress_callback:
-            progress_callback("pass2", 0, "2단계: 장면별 스마트 자막 생성 중...")
+            progress_callback("pass2", 0, "2단계: 장면 경계 감지 중...")
 
-        subtitles = []
-        batch_size = 12  # 한 번에 12프레임씩 (60초 분량) — 넓은 범위를 봐야 장면 전환 판단 가능
+        all_boundaries = []
+        batch_size = 16  # 경계 감지는 가벼움 → 더 큰 배치 가능
         total_batches = (len(frame_paths) + batch_size - 1) // batch_size
 
         for i in range(0, len(frame_paths), batch_size):
@@ -444,18 +452,36 @@ Return ONLY valid JSON, no other text.
 
             if progress_callback:
                 pct = int((batch_num / total_batches) * 100)
-                progress_callback("pass2", pct, f"배치 {batch_num}/{total_batches} 분석 중...")
+                progress_callback("pass2", pct, f"경계 감지 {batch_num}/{total_batches}...")
 
-            batch_subs = self._pass2_smart_subtitles(batch, context, style)
-            subtitles.extend(batch_subs)
+            boundaries = self._pass2_detect_boundaries(batch, context)
+            all_boundaries.extend(boundaries)
 
-        # ── Post-processing: 중복/유사 자막 병합 ──
+        # 경계 → 장면 구간으로 변환
+        scenes = self._boundaries_to_scenes(all_boundaries, frame_paths)
+
+        if progress_callback:
+            progress_callback("pass2", 100, f"{len(scenes)}개 장면 감지 완료")
+
+        # ── Pass 3: 장면별 자막 생성 ──
+        if progress_callback:
+            progress_callback("pass3", 0, "3단계: 장면별 자막 생성 중...")
+
+        subtitles = []
+        for idx, scene in enumerate(scenes):
+            if progress_callback:
+                pct = int(((idx + 1) / len(scenes)) * 100)
+                progress_callback("pass3", pct, f"자막 {idx + 1}/{len(scenes)} 생성 중...")
+
+            sub = self._pass3_generate_subtitle(scene, context, style)
+            if sub:
+                subtitles.append(sub)
+
+        # ── Post-processing ──
         subtitles = self._merge_similar_subtitles(subtitles)
-
-        # ── Post-processing: 너무 짧은 자막 제거 (최소 3초) ──
         subtitles = [s for s in subtitles if (s["end"] - s["start"]) >= 2.5]
 
-        # ── Post-processing: 인접 자막 간격이 1초 미만이면 이전 자막 end 늘려서 연결 ──
+        # 인접 자막 간격이 1초 미만이면 이전 자막 end 늘려서 연결
         for i in range(len(subtitles) - 1):
             gap = subtitles[i + 1]["start"] - subtitles[i]["end"]
             if 0 < gap < 1.0:
@@ -535,45 +561,53 @@ Return ONLY valid JSON, no other text.
         )
         return message.choices[0].message.content
 
-    def _pass2_smart_subtitles(self, frames: List[Dict], context: str, style: str = "portfolio") -> List[Dict]:
-        """Pass 2: 맥락 기반 스마트 자막 생성."""
+    # ================================================================
+    # Pass 2: 장면 경계 감지 — "언제 화면이 바뀌는지"만 판단
+    # ================================================================
 
+    def _pass2_detect_boundaries(self, frames: List[Dict], context: str) -> List[Dict]:
+        """Pass 2: 프레임 배치에서 장면 경계(화면 전환 시점)만 감지."""
         if self.settings.provider == "claude":
-            return self._pass2_claude(frames, context, style)
+            return self._pass2_boundaries_claude(frames, context)
         elif self.settings.provider == "grok":
-            return self._pass2_grok(frames, context, style)
+            return self._pass2_boundaries_grok(frames, context)
         raise ValueError(f"Unknown provider: {self.settings.provider}")
 
-    def _build_pass2_prompt(self, context: str, style: str) -> str:
-        """스타일별 Pass 2 프롬프트 조립."""
-        style_info = SUBTITLE_STYLES.get(style, SUBTITLE_STYLES["portfolio"])
+    def _build_pass2_boundary_prompt(self, context: str) -> str:
+        """Pass 2 장면 경계 감지 프롬프트."""
         return (
             f"## 영상 맥락\n{context}\n\n"
-            f"## 자막 스타일: {style_info['name']}\n"
-            f"{style_info['prompt']}\n\n"
-            "## 핵심 원칙: 자막은 적을수록 좋다\n"
-            "이 배치에 12장 프레임이 있어도 자막은 2~4개면 충분해.\n"
-            "화면이 진짜 바뀔 때(다른 페이지, 다른 기능, 팝업 등)만 새 자막을 만들어.\n"
-            "같은 화면에서 스크롤만 하거나, 입력만 하거나, 로딩 중이면 자막 넣지 마.\n\n"
-            "## 타이밍 규칙\n"
-            "1. 각 프레임 앞에 [XX.X초]가 있어. 이게 그 프레임의 실제 타임스탬프야\n"
-            "2. start = 화면이 바뀐 프레임의 타임스탬프\n"
-            "3. end = 다음 화면 변화 프레임의 타임스탬프 (자막이 충분히 길게 유지되게)\n"
-            "4. 자막 하나의 최소 길이는 4초. 너무 짧으면 읽을 수 없어\n"
-            "5. 화면 변화가 없으면 자막을 아예 만들지 마. 빈 배열 []을 반환해도 됨\n\n"
+            "## 너의 역할: 장면 경계 감지기\n"
+            "아래 프레임들을 순서대로 보고, '화면이 의미 있게 바뀌는 시점'만 찾아줘.\n"
+            "자막 텍스트는 쓰지 마. 경계 시점과 간단한 설명만 반환해.\n\n"
+            "## '의미 있는 화면 변화'란?\n"
+            "- 다른 페이지/화면으로 이동\n"
+            "- 새로운 기능/메뉴를 시연 시작\n"
+            "- 팝업, 모달, 다이얼로그 등장/사라짐\n"
+            "- 결과 화면 표시 (데이터 로딩 완료, 차트 생성 등)\n"
+            "- 화면 레이아웃이 크게 바뀜\n\n"
+            "## '의미 없는 변화' (무시할 것)\n"
+            "- 같은 페이지에서 스크롤만 한 경우\n"
+            "- 텍스트 입력 중 (커서만 깜빡)\n"
+            "- 마우스 위치만 바뀐 경우\n"
+            "- 로딩 스피너만 돌고 있는 경우\n"
+            "- 같은 화면에서 데이터만 살짝 바뀐 경우\n\n"
             "## 응답 형식 (JSON 배열만 반환)\n"
-            '[{"start": 0.0, "end": 8.0, "text": "자막 내용"}, ...]\n\n'
-            "JSON만 반환해. 다른 텍스트 없이."
+            '[{"timestamp": 15.0, "description": "대시보드에서 설정 페이지로 이동"}, ...]\n\n'
+            "- timestamp: 화면이 바뀐 프레임의 [XX.X초] 값\n"
+            "- description: 무엇이 바뀌었는지 10자 내외 설명\n"
+            "- 변화가 없으면 빈 배열 [] 반환\n"
+            "- JSON만 반환해. 다른 텍스트 없이."
         )
 
-    def _pass2_claude(self, frames: List[Dict], context: str, style: str = "portfolio") -> List[Dict]:
-        """Claude Vision으로 스마트 자막 생성."""
+    def _pass2_boundaries_claude(self, frames: List[Dict], context: str) -> List[Dict]:
+        """Claude Vision으로 장면 경계 감지."""
         content = [{
             "type": "text",
-            "text": self._build_pass2_prompt(context, style)
+            "text": self._build_pass2_boundary_prompt(context)
         }]
 
-        for idx, frame in enumerate(frames):
+        for frame in frames:
             with open(frame["path"], "rb") as f:
                 image_data = base64.b64encode(f.read()).decode("utf-8")
             content.append({"type": "text", "text": f"[{frame['timestamp']:.1f}초]"})
@@ -583,20 +617,19 @@ Return ONLY valid JSON, no other text.
             })
 
         message = self.client.messages.create(
-            model=self.settings.model, max_tokens=2048,
+            model=self.settings.model, max_tokens=1024,
             messages=[{"role": "user", "content": content}],
         )
+        return self._parse_boundary_response(message.content[0].text)
 
-        return self._parse_subtitle_response(message.content[0].text, frames)
-
-    def _pass2_grok(self, frames: List[Dict], context: str, style: str = "portfolio") -> List[Dict]:
-        """Grok Vision으로 스마트 자막 생성."""
+    def _pass2_boundaries_grok(self, frames: List[Dict], context: str) -> List[Dict]:
+        """Grok Vision으로 장면 경계 감지."""
         content = [{
             "type": "text",
-            "text": self._build_pass2_prompt(context, style)
+            "text": self._build_pass2_boundary_prompt(context)
         }]
 
-        for idx, frame in enumerate(frames):
+        for frame in frames:
             with open(frame["path"], "rb") as f:
                 image_data = base64.b64encode(f.read()).decode("utf-8")
             content.append({"type": "text", "text": f"[{frame['timestamp']:.1f}초]"})
@@ -606,11 +639,212 @@ Return ONLY valid JSON, no other text.
             })
 
         message = self.client.chat.completions.create(
-            model=self.settings.model, max_tokens=2048,
+            model=self.settings.model, max_tokens=1024,
             messages=[{"role": "user", "content": content}],
         )
+        return self._parse_boundary_response(message.choices[0].message.content)
 
-        return self._parse_subtitle_response(message.choices[0].message.content, frames)
+    def _parse_boundary_response(self, response_text: str) -> List[Dict]:
+        """Pass 2 응답에서 경계 정보 파싱."""
+        import re
+        try:
+            boundaries = json.loads(response_text)
+        except json.JSONDecodeError:
+            match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if match:
+                try:
+                    boundaries = json.loads(match.group())
+                except json.JSONDecodeError:
+                    return []
+            else:
+                return []
+
+        result = []
+        for b in boundaries:
+            if "timestamp" in b:
+                result.append({
+                    "timestamp": float(b["timestamp"]),
+                    "description": str(b.get("description", "")),
+                })
+        return result
+
+    def _boundaries_to_scenes(self, boundaries: List[Dict], frame_paths: List[Dict]) -> List[Dict]:
+        """
+        경계 시점 목록 → 장면 구간 목록으로 변환.
+
+        예: 경계가 [10, 25, 40]이고 영상이 0~60초이면
+        → 장면: [0~10, 10~25, 25~40, 40~60]
+
+        각 장면에는 해당 구간의 대표 프레임 1~2장 포함.
+        """
+        if not frame_paths:
+            return []
+
+        first_ts = frame_paths[0]["timestamp"]
+        last_ts = frame_paths[-1]["timestamp"] + frame_paths[-1].get("duration", 5.0)
+
+        # 중복 제거 + 정렬
+        boundary_times = sorted(set(b["timestamp"] for b in boundaries))
+
+        # 경계가 없으면 전체를 하나의 장면으로
+        if not boundary_times:
+            boundary_times = [first_ts + (last_ts - first_ts) / 2]
+
+        # 구간 생성
+        edges = [first_ts] + boundary_times + [last_ts]
+        scenes = []
+
+        for i in range(len(edges) - 1):
+            start = edges[i]
+            end = edges[i + 1]
+            if end - start < 2.0:  # 2초 미만 구간은 스킵
+                continue
+
+            # 이 구간에 해당하는 프레임 찾기
+            scene_frames = [f for f in frame_paths if start <= f["timestamp"] < end]
+            if not scene_frames:
+                # 가장 가까운 프레임 1개라도 포함
+                closest = min(frame_paths, key=lambda f: abs(f["timestamp"] - start))
+                scene_frames = [closest]
+
+            # 대표 프레임: 구간 시작 직후 + 중간 (최대 2장 — API 비용 절약)
+            rep_frames = [scene_frames[0]]
+            if len(scene_frames) > 2:
+                rep_frames.append(scene_frames[len(scene_frames) // 2])
+
+            # 경계 설명 찾기
+            desc = ""
+            for b in boundaries:
+                if abs(b["timestamp"] - start) < 0.5:
+                    desc = b.get("description", "")
+                    break
+
+            scenes.append({
+                "start": start,
+                "end": end,
+                "frames": rep_frames,
+                "description": desc,
+            })
+
+        return scenes
+
+    # ================================================================
+    # Pass 3: 장면별 자막 생성 — "뭐라고 쓸지"만 결정
+    # ================================================================
+
+    def _pass3_generate_subtitle(self, scene: Dict, context: str, style: str) -> Optional[Dict]:
+        """Pass 3: 하나의 장면 구간에 대해 자막 텍스트 생성."""
+        if self.settings.provider == "claude":
+            return self._pass3_claude(scene, context, style)
+        elif self.settings.provider == "grok":
+            return self._pass3_grok(scene, context, style)
+        raise ValueError(f"Unknown provider: {self.settings.provider}")
+
+    def _build_pass3_prompt(self, scene: Dict, context: str, style: str) -> str:
+        """Pass 3 자막 생성 프롬프트 — 장면 하나에 대해 자막 하나만."""
+        style_info = SUBTITLE_STYLES.get(style, SUBTITLE_STYLES["portfolio"])
+        return (
+            f"## 영상 맥락\n{context}\n\n"
+            f"## 현재 장면 정보\n"
+            f"- 시간: {scene['start']:.1f}초 ~ {scene['end']:.1f}초 ({scene['end'] - scene['start']:.1f}초 구간)\n"
+            f"- 장면 설명: {scene.get('description', '(없음)')}\n\n"
+            f"## 자막 스타일: {style_info['name']}\n"
+            f"{style_info['prompt']}\n\n"
+            "## 지시사항\n"
+            "위 프레임들은 이 장면 구간의 대표 화면이야.\n"
+            "이 장면에 대해 자막이 필요한지 판단하고:\n"
+            "- 필요하면: 자막 텍스트 하나만 작성\n"
+            "- 불필요하면(변화 없음, 로딩 중, 반복 동작): null 반환\n\n"
+            "## 응답 형식 (JSON만 반환)\n"
+            f'{{"text": "자막 내용"}} 또는 null\n\n'
+            "JSON만 반환해. 다른 텍스트 없이."
+        )
+
+    def _pass3_claude(self, scene: Dict, context: str, style: str) -> Optional[Dict]:
+        """Claude Vision으로 장면 자막 생성."""
+        content = [{
+            "type": "text",
+            "text": self._build_pass3_prompt(scene, context, style)
+        }]
+
+        for frame in scene["frames"]:
+            with open(frame["path"], "rb") as f:
+                image_data = base64.b64encode(f.read()).decode("utf-8")
+            content.append({"type": "text", "text": f"[{frame['timestamp']:.1f}초]"})
+            content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/jpeg", "data": image_data}
+            })
+
+        message = self.client.messages.create(
+            model=self.settings.model, max_tokens=256,
+            messages=[{"role": "user", "content": content}],
+        )
+        return self._parse_pass3_response(message.content[0].text, scene)
+
+    def _pass3_grok(self, scene: Dict, context: str, style: str) -> Optional[Dict]:
+        """Grok Vision으로 장면 자막 생성."""
+        content = [{
+            "type": "text",
+            "text": self._build_pass3_prompt(scene, context, style)
+        }]
+
+        for frame in scene["frames"]:
+            with open(frame["path"], "rb") as f:
+                image_data = base64.b64encode(f.read()).decode("utf-8")
+            content.append({"type": "text", "text": f"[{frame['timestamp']:.1f}초]"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}
+            })
+
+        message = self.client.chat.completions.create(
+            model=self.settings.model, max_tokens=256,
+            messages=[{"role": "user", "content": content}],
+        )
+        return self._parse_pass3_response(message.choices[0].message.content, scene)
+
+    def _parse_pass3_response(self, response_text: str, scene: Dict) -> Optional[Dict]:
+        """Pass 3 응답 파싱 — 자막 하나 또는 null."""
+        import re
+        text = response_text.strip()
+
+        # "null" 응답 처리
+        if text.lower() in ("null", "none", "없음", "{}"):
+            return None
+
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            # JSON이 아닌 텍스트에서 추출 시도
+            match = re.search(r'\{.*\}', text, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group())
+                except json.JSONDecodeError:
+                    return None
+            else:
+                # 순수 텍스트일 수도 있음 — 자막으로 사용
+                if len(text) > 3 and len(text) < 100:
+                    return {
+                        "start": scene["start"],
+                        "end": scene["end"],
+                        "text": text.strip('"').strip("'"),
+                    }
+                return None
+
+        if data is None:
+            return None
+
+        subtitle_text = data.get("text", "").strip()
+        if not subtitle_text or subtitle_text in ("(동일 화면)", "동일 화면", "null"):
+            return None
+
+        return {
+            "start": scene["start"],
+            "end": scene["end"],
+            "text": subtitle_text,
+        }
 
     def _parse_subtitle_response(self, response_text: str, frames: List[Dict]) -> List[Dict]:
         """AI 응답에서 자막 JSON을 파싱."""

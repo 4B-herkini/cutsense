@@ -228,6 +228,45 @@ SUBTITLE_STYLES = {
 }
 
 
+# ============================================================================
+# Pass 3 전용 스타일 핵심 요약 — 전체 프롬프트 대신 3줄로 압축
+# Pass 2에서 이미 장면이 분리되었으므로, Pass 3는 텍스트 품질에만 집중
+# ============================================================================
+
+SUBTITLE_STYLE_BRIEFS = {
+    "auto": (
+        "- 톤과 길이를 네가 판단. 이 장면에 가장 자연스러운 자막을 써\n"
+        "- 화면에 보이는 텍스트를 그대로 읽지 마. 시청자가 놓칠 맥락만 알려줘\n"
+        "- 15~25자. 자연스러운 반말. 이모지 금지"
+    ),
+    "portfolio": (
+        "- 이 기능이 고객에게 주는 가치를 표현해. 기능 나열 아님\n"
+        "- 자연스러운 반말 + 자신감. '이걸 쓰면 뭐가 편해지나'에 집중\n"
+        "- 15~25자. 화면이 말하게 해, 네가 감탄하지 마. 이모지 금지"
+    ),
+    "training": (
+        "- 존댓말(~하세요). 다음에 뭘 해야 하는지 안내하는 네비게이터 역할\n"
+        "- 버튼/메뉴 정확한 이름 포함. '어디를 클릭 → 뭐가 나온다' 형식\n"
+        "- 20~35자. 감정/유머 금지. 이모지 금지"
+    ),
+    "client": (
+        "- 격식체(~입니다). 구현 기능의 비즈니스 효과를 전문적으로 서술\n"
+        "- 기술 용어 최소화, 비즈니스 용어 중심. 자화자찬 금지\n"
+        "- 20~35자. 무게감 있게. 이모지 금지"
+    ),
+    "sns": (
+        "- 극단적으로 짧게. 10자 이내. 스크롤 멈추게 하는 훅\n"
+        "- 의문문/감탄문 적극 사용 ('이게 됨?', '실화냐'). 반말\n"
+        "- 이모지 1개까지 OK. 설명조 금지"
+    ),
+    "qa": (
+        "- '동작 → 결과' 형식 엄수. 감정/평가 일체 금지\n"
+        "- 버튼/메뉴 정확한 이름. 개발자가 재현할 수 있는 수준의 기록\n"
+        "- 15~35자. 이모지 금지"
+    ),
+}
+
+
 class AIService:
     """Service for AI-powered video analysis and content generation."""
 
@@ -586,12 +625,10 @@ Return ONLY valid JSON, no other text.
             "- 팝업, 모달, 다이얼로그 등장/사라짐\n"
             "- 결과 화면 표시 (데이터 로딩 완료, 차트 생성 등)\n"
             "- 화면 레이아웃이 크게 바뀜\n\n"
-            "## '의미 없는 변화' (무시할 것)\n"
-            "- 같은 페이지에서 스크롤만 한 경우\n"
-            "- 텍스트 입력 중 (커서만 깜빡)\n"
-            "- 마우스 위치만 바뀐 경우\n"
-            "- 로딩 스피너만 돌고 있는 경우\n"
-            "- 같은 화면에서 데이터만 살짝 바뀐 경우\n\n"
+            "## '의미 없는 변화' (무시)\n"
+            "- 스크롤, 텍스트 입력, 마우스 이동, 로딩 스피너\n"
+            "- 같은 화면 내 데이터 미세 변화\n"
+            "- 연속 프레임이 거의 동일한 경우\n\n"
             "## 응답 형식 (JSON 배열만 반환)\n"
             '[{"timestamp": 15.0, "description": "대시보드에서 설정 페이지로 이동"}, ...]\n\n'
             "- timestamp: 화면이 바뀐 프레임의 [XX.X초] 값\n"
@@ -741,23 +778,28 @@ Return ONLY valid JSON, no other text.
         raise ValueError(f"Unknown provider: {self.settings.provider}")
 
     def _build_pass3_prompt(self, scene: Dict, context: str, style: str) -> str:
-        """Pass 3 자막 생성 프롬프트 — 장면 하나에 대해 자막 하나만."""
+        """Pass 3 자막 생성 프롬프트 — 장면 하나에 대해 자막 하나만.
+
+        v0.4 튜닝: 스타일 프롬프트 전문 대신 핵심 3줄 요약 사용.
+        긍정 지시 위주 ("이렇게 해")로 AI 혼란 방지.
+        """
         style_info = SUBTITLE_STYLES.get(style, SUBTITLE_STYLES["portfolio"])
+        # 스타일별 핵심 요약 (전체 프롬프트 대신 — Pass 3는 가볍게)
+        style_brief = SUBTITLE_STYLE_BRIEFS.get(style, SUBTITLE_STYLE_BRIEFS["portfolio"])
+
         return (
             f"## 영상 맥락\n{context}\n\n"
-            f"## 현재 장면 정보\n"
-            f"- 시간: {scene['start']:.1f}초 ~ {scene['end']:.1f}초 ({scene['end'] - scene['start']:.1f}초 구간)\n"
-            f"- 장면 설명: {scene.get('description', '(없음)')}\n\n"
+            f"## 현재 장면\n"
+            f"- 시간: {scene['start']:.1f}초 ~ {scene['end']:.1f}초 ({scene['end'] - scene['start']:.1f}초)\n"
+            f"- 변화: {scene.get('description', '(없음)')}\n\n"
             f"## 자막 스타일: {style_info['name']}\n"
-            f"{style_info['prompt']}\n\n"
-            "## 지시사항\n"
-            "위 프레임들은 이 장면 구간의 대표 화면이야.\n"
-            "이 장면에 대해 자막이 필요한지 판단하고:\n"
-            "- 필요하면: 자막 텍스트 하나만 작성\n"
-            "- 불필요하면(변화 없음, 로딩 중, 반복 동작): null 반환\n\n"
-            "## 응답 형식 (JSON만 반환)\n"
-            f'{{"text": "자막 내용"}} 또는 null\n\n'
-            "JSON만 반환해. 다른 텍스트 없이."
+            f"{style_brief}\n\n"
+            "## 판단 기준\n"
+            "위 프레임이 이 장면의 대표 화면이야.\n"
+            "자막이 있으면 시청자에게 도움이 되는지 판단해:\n"
+            '- 도움 됨 → {{"text": "자막 내용"}} (한국어, 15~30자)\n'
+            "- 도움 안 됨(로딩, 반복, 변화 없음) → null\n\n"
+            "JSON만 반환해."
         )
 
     def _pass3_claude(self, scene: Dict, context: str, style: str) -> Optional[Dict]:

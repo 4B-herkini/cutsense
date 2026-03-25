@@ -402,6 +402,9 @@ const App = () => {
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (!videoRef.current) return;
+            // 텍스트 입력 중이면 단축키 무시 (자막 편집 시 스페이스/화살표 충돌 방지)
+            const tag = e.target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.contentEditable === 'true') return;
             if (e.key === 'ArrowLeft') {
                 e.preventDefault();
                 videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 5);

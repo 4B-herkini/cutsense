@@ -218,7 +218,8 @@ class VideoProcessor:
         style: Optional[SubtitleStyle] = None,
     ) -> Generator[dict, None, str]:
         """
-        Burn subtitles into video using FFmpeg subprocess (Windows-safe).
+        Burn subtitles into video using FFmpeg drawtext filter.
+        SRT 파일 없이 직접 텍스트를 프레임에 그림 → Windows 경로 문제 완전 제거.
 
         Args:
             path: Path to video file
@@ -240,76 +241,68 @@ class VideoProcessor:
                 f"{Path(path).stem}_subtitled.mp4",
             )
 
-            # SRT를 temp 경로에 생성 (공백/한글 경로 문제 방지 — Opus 리뷰)
-            import tempfile
-            srt_fd, srt_path = tempfile.mkstemp(suffix=".srt", prefix="cutsense_")
-            os.close(srt_fd)
-
-            with open(srt_path, "w", encoding="utf-8") as f:
-                for i, sub in enumerate(subtitles, 1):
-                    start_time = self._seconds_to_srt_time(sub["start"])
-                    end_time = self._seconds_to_srt_time(sub["end"])
-                    text = sub["text"]
-                    f.write(f"{i}\n{start_time} --> {end_time}\n{text}\n\n")
-
             yield {
                 "status": "burning",
                 "progress": 0,
                 "message": "자막 입히는 중...",
             }
 
-            # Windows-safe: 경로를 forward slash로 + 콜론 이스케이프 (FFmpeg libass용)
-            srt_escaped = srt_path.replace("\\", "/").replace(":", "\\:")
+            # drawtext 필터 체인 생성 — SRT 파일 불필요, 경로 문제 없음
+            # 한글 폰트: Windows의 malgun.ttf (맑은 고딕)
+            font_path = "C\\\\:/Windows/Fonts/malgun.ttf"
+            fontsize = style.size or 24
 
-            # ASS style string for subtitle formatting
-            force_style = (
-                f"FontName=Arial,"
-                f"FontSize={style.size},"
-                f"PrimaryColour=&H00FFFFFF,"
-                f"OutlineColour=&H00000000,"
-                f"BorderStyle=3,"
-                f"Outline=1,"
-                f"Shadow=0,"
-                f"MarginV=30,"
-                f"Bold=1"
-            )
+            drawtext_filters = []
+            for sub in subtitles:
+                # 텍스트 이스케이프: FFmpeg drawtext에서 특수문자 처리
+                text = sub["text"]
+                text = text.replace("\\", "\\\\\\\\")
+                text = text.replace("'", "\u2019")  # 작은따옴표 → 유니코드
+                text = text.replace(":", "\\:")
+                text = text.replace("%", "%%")
 
-            # subprocess list mode — 따옴표 없이 (Gemini 리뷰: shell=False에서 quote 불필요)
+                start = sub["start"]
+                end = sub["end"]
+
+                dt = (
+                    f"drawtext=fontfile='{font_path}'"
+                    f":text='{text}'"
+                    f":fontsize={fontsize}"
+                    f":fontcolor=white"
+                    f":borderw=2"
+                    f":bordercolor=black"
+                    f":x=(w-text_w)/2"
+                    f":y=h-th-40"
+                    f":enable='between(t,{start:.2f},{end:.2f})'"
+                )
+                drawtext_filters.append(dt)
+
+            # 자막이 없으면 그냥 복사
+            if not drawtext_filters:
+                cmd = ["ffmpeg", "-y", "-i", path, "-c", "copy", output_path]
+                subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                yield {"status": "complete", "progress": 100, "message": "자막 없음 - 복사 완료"}
+                return output_path
+
+            vf_value = ",".join(drawtext_filters)
+
             cmd = [
                 "ffmpeg", "-y",
                 "-i", path,
-                "-vf", f"subtitles={srt_escaped}:force_style={force_style}",
+                "-vf", vf_value,
                 "-c:v", "libx264", "-crf", "23",
                 "-c:a", "aac", "-b:a", "128k",
                 output_path,
             ]
 
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300
+                cmd, capture_output=True, text=True, timeout=600
             )
 
             if result.returncode != 0:
-                # Fallback: force_style 없이 기본으로 시도
-                cmd_simple = [
-                    "ffmpeg", "-y",
-                    "-i", path,
-                    "-vf", f"subtitles={srt_escaped}",
-                    "-c:v", "libx264", "-crf", "23",
-                    "-c:a", "aac", "-b:a", "128k",
-                    output_path,
-                ]
-                result = subprocess.run(
-                    cmd_simple, capture_output=True, text=True, timeout=300
+                raise RuntimeError(
+                    f"FFmpeg subtitle burn failed: {result.stderr[-500:]}"
                 )
-
-                if result.returncode != 0:
-                    raise RuntimeError(
-                        f"FFmpeg subtitle burn failed: {result.stderr[-500:]}"
-                    )
-
-            # Cleanup SRT
-            if os.path.exists(srt_path):
-                os.remove(srt_path)
 
             yield {
                 "status": "complete",

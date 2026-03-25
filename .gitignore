@@ -7,3 +7,8 @@ projects/
 debug.log
 error.log
 .env
+*.zip
+*api key*
+*api_key*
+*secret*
+*.key

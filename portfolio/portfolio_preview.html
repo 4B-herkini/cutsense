@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CutSense — 포트폴리오</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+@font-face {
+  font-family: 'Happiness Sans';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2205@1.0/Happiness-Sans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Happiness Sans';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2205@1.0/Happiness-Sans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+}
+:root {
+  --bg: #ffffff;
+  --bg2: #f7f5f2;
+  --bg3: #eeeae4;
+  --ink: #0a0d14;
+  --ink2: #3a4155;
+  --muted: #6b7494;
+  --brown: #8b5e3c;
+  --brown-light: #f5efe9;
+  --brown-mid: rgba(139,94,60,0.1);
+  --border: #e4e0d8;
+  --shadow: 0 1px 3px rgba(10,13,20,0.06), 0 4px 16px rgba(10,13,20,0.04);
+  --shadow-lg: 0 8px 40px rgba(10,13,20,0.12), 0 2px 8px rgba(10,13,20,0.06);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Happiness Sans', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg2); color: var(--ink); line-height: 1.7; }
+
+/* HERO */
+.hero {
+  background: var(--ink);
+  padding: 56px 48px;
+  color: #fff;
+  text-align: center;
+}
+.hero .badge {
+  display: inline-block;
+  background: rgba(139,94,60,0.2);
+  border: 1px solid rgba(139,94,60,0.4);
+  color: #c4844f;
+  padding: 5px 16px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  letter-spacing: 0.3px;
+}
+.hero h1 {
+  font-size: clamp(24px, 3vw, 32px);
+  font-weight: 800;
+  letter-spacing: -1px;
+  margin-bottom: 8px;
+}
+.hero .subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: rgba(255,255,255,0.45);
+  margin-bottom: 24px;
+}
+.hero .value-prop {
+  max-width: 680px;
+  margin: 0 auto;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 20px 28px;
+  font-size: 15px;
+  color: rgba(255,255,255,0.65);
+  line-height: 1.7;
+}
+.hero .value-prop strong { color: #fff; }
+
+/* CONTENT */
+.content { max-width: 820px; margin: 0 auto; padding: 36px 24px; }
+
+/* HIGHLIGHT BAR */
+.highlight-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+.highlight-item {
+  text-align: center;
+  padding: 24px 16px;
+  border-right: 1px solid var(--border);
+}
+.highlight-item:last-child { border-right: none; }
+.highlight-item .num {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--brown);
+  display: block;
+}
+.highlight-item .desc { font-size: 13px; color: var(--muted); margin-top: 3px; }
+
+/* SECTION */
+.section {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px 36px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+.section h2 {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+  margin-bottom: 18px;
+}
+.section .s-eye {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brown);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+/* FLOW */
+.flow-steps { display: flex; flex-direction: column; margin: 8px 0; }
+.flow-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+.flow-step:last-child { border-bottom: none; }
+.flow-num {
+  width: 30px; height: 30px;
+  background: var(--brown);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.flow-title { font-weight: 700; font-size: 15px; color: var(--ink); }
+.flow-desc { font-size: 14px; color: var(--muted); margin-top: 3px; line-height: 1.7; }
+
+/* FEATURE CARDS */
+.feat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 8px;
+}
+.feat-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  transition: all 0.2s;
+}
+.feat-card:hover { border-color: var(--brown); box-shadow: var(--shadow); }
+.feat-icon {
+  width: 36px; height: 36px;
+  background: var(--brown-mid);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+.feat-icon svg { width: 18px; height: 18px; stroke: var(--brown); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.feat-card .ft { font-weight: 700; font-size: 15px; color: var(--ink); margin-bottom: 4px; }
+.feat-card .fd { font-size: 14px; color: var(--muted); line-height: 1.7; }
+
+/* SCREENSHOTS */
+.ss-gallery { display: grid; grid-template-columns: 1fr; gap: 24px; margin-top: 16px; }
+.ss-item { text-align: center; }
+.ss-item img {
+  width: 100%;
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  transition: transform 0.2s;
+}
+.ss-item img:hover { transform: scale(1.01); }
+.ss-caption { margin-top: 10px; font-size: 14px; color: var(--muted); font-weight: 500; }
+.ss-step {
+  display: inline-block;
+  background: var(--brown); color: #fff;
+  padding: 3px 12px; border-radius: 10px;
+  font-size: 12px; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  margin-right: 6px;
+}
+
+/* STACK */
+.stack-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+.stack-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--bg2);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.stack-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px; color: var(--brown); min-width: 70px; font-weight: 600;
+}
+.stack-value { font-size: 14px; font-weight: 600; color: var(--ink2); }
+
+/* RESULT */
+.result-box {
+  background: var(--brown-light);
+  border: 1px solid rgba(139,94,60,0.2);
+  border-left: 3px solid var(--brown);
+  border-radius: 0 12px 12px 0;
+  padding: 20px 24px;
+  margin-top: 18px;
+}
+.result-box .rb-title { font-weight: 700; color: var(--brown); margin-bottom: 4px; font-size: 15px; }
+.result-box .rb-text { font-size: 14px; color: var(--ink2); line-height: 1.7; }
+
+/* DIFF TABLE */
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.diff-table th {
+  background: var(--bg2);
+  padding: 10px 14px;
+  text-align: left;
+  font-weight: 700;
+  color: var(--ink2);
+  border-bottom: 2px solid var(--border);
+}
+.diff-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink2);
+}
+.diff-table tr:last-child td { border-bottom: none; }
+.diff-table .highlight-cell {
+  color: var(--brown);
+  font-weight: 700;
+}
+
+/* CTA */
+.cta-section {
+  text-align: center;
+  padding: 36px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+}
+.cta-section .dev-eye {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; font-weight: 700; color: var(--brown);
+  letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px;
+}
+.cta-section .dev-title { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: var(--ink); margin-bottom: 6px; }
+.cta-section .dev-sub { font-size: 14px; color: var(--muted); margin-bottom: 20px; }
+.tag-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.tag-row span {
+  padding: 6px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink2);
+}
+
+/* BRAND DIVIDER */
+.brand-divider {
+  text-align: center;
+  padding: 14px 0;
+  margin-bottom: 20px;
+}
+.brand-divider .brand-name {
+  font-family: 'Happiness Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+}
+.brand-divider .brand-name span {
+  color: var(--brown);
+}
+
+.brand-divider .brand-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+/* FOOTER */
+.footer {
+  text-align: center;
+  padding: 28px 24px;
+  font-size: 13px;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* MOBILE */
+@media (max-width: 600px) {
+  .hero { padding: 40px 20px; }
+  .highlight-bar { grid-template-columns: 1fr; }
+  .feat-grid { grid-template-columns: 1fr; }
+  .stack-grid { grid-template-columns: 1fr; }
+  .section { padding: 24px 20px; }
+  .content { padding: 24px 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="badge">시중 편집기에 없는 기능 · 화면만 보고 자막 생성 · PWA 지원</div>
+  <h1>AI 시연영상 자동 자막 편집기</h1>
+  <div class="subtitle">CutSense v0.4 — React 18 + FastAPI + FFmpeg + Claude Vision API</div>
+  <p style="font-size:14px; color:rgba(255,255,255,0.5); margin-bottom:20px;">음성이 없는 화면 캡처 영상에서 AI가 직접 화면을 보고 자막을 생성합니다</p>
+  <div class="value-prop">
+    기존 영상 편집기(CapCut, Vrew, DaVinci)는 모두 <strong>음성 → 텍스트(STT)</strong> 기반입니다.
+    CutSense는 <strong>화면만 보고 자막을 자동 생성</strong>합니다 — 이 기능은 현존하는 편집기에 없습니다.
+    소프트웨어 시연 영상, 포트폴리오 영상, 교육 영상 등 <strong>음성 없는 화면 녹화</strong>에 특화되었습니다.
+  </div>
+</div>
+
+<div class="content">
+
+  <!-- 핵심 수치 -->
+  <div class="highlight-bar">
+    <div class="highlight-item">
+      <span class="num">3-Pass AI</span>
+      <span class="desc">맥락 → 경계 → 자막 생성</span>
+    </div>
+    <div class="highlight-item">
+      <span class="num">6종 스타일</span>
+      <span class="desc">용도별 자막 톤 자동 전환</span>
+    </div>
+    <div class="highlight-item">
+      <span class="num">~$0.43</span>
+      <span class="desc">4분 영상 분석 비용</span>
+    </div>
+  </div>
+
+  <div class="brand-divider">
+    <div class="brand-name">Inno<span>Forge</span> Inc.</div>
+    <div class="brand-sub">full-stack development</div>
+  </div>
+
+  <!-- 차별점 -->
+  <div class="section">
+    <div class="s-eye">Differentiation</div>
+    <h2>기존 편집기와 무엇이 다른가</h2>
+    <table class="diff-table">
+      <thead>
+        <tr>
+          <th>기능</th>
+          <th>기존 편집기 (CapCut, Vrew 등)</th>
+          <th>CutSense</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>자막 생성 방식</td>
+          <td>음성 인식 (STT)</td>
+          <td class="highlight-cell">화면을 보고 생성 (Vision AI)</td>
+        </tr>
+        <tr>
+          <td>음성 없는 영상</td>
+          <td>자막 생성 불가</td>
+          <td class="highlight-cell">핵심 대상</td>
+        </tr>
+        <tr>
+          <td>자막 톤/스타일</td>
+          <td>수동 편집</td>
+          <td class="highlight-cell">6종 자동 전환 (포트폴리오, 교육, 납품 등)</td>
+        </tr>
+        <tr>
+          <td>장면 전환 감지</td>
+          <td>수동 분할</td>
+          <td class="highlight-cell">AI 자동 감지 (3-Pass)</td>
+        </tr>
+        <tr>
+          <td>적합 용도</td>
+          <td>브이로그, 인터뷰 등 음성 콘텐츠</td>
+          <td class="highlight-cell">SW 시연, 포트폴리오, 교육, QA 기록</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="brand-divider">
+    <div class="brand-name">Inno<span>Forge</span> Inc.</div>
+    <div class="brand-sub">vision-based subtitle generation</div>
+  </div>
+
+  <!-- 핵심 워크플로우 -->
+  <div class="section">
+    <div class="s-eye">Core Flow</div>
+    <h2>영상 편집 전체 워크플로우</h2>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="flow-num">1</div>
+        <div>
+          <div class="flow-title">영상 드래그 앤 드롭</div>
+          <div class="flow-desc">프로젝트 생성 → 영상 파일 드롭 → 서버 업로드. 멀티 영상 동시 로드, 드래그로 순서 변경 가능.</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">2</div>
+        <div>
+          <div class="flow-title">좌클릭으로 불필요 구간 제거</div>
+          <div class="flow-desc">좌클릭 2번으로 제거 구간 설정 (시작/끝). 우클릭 배속 순환, 화살표 5초 점프. 실시간 스톱워치로 컷 길이 확인.</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">3</div>
+        <div>
+          <div class="flow-title">AI Vision 3-Pass 자막 생성</div>
+          <div class="flow-desc">Pass 1: 8장 샘플로 영상 맥락 파악 → Pass 2: 장면 경계 자동 감지 → Pass 3: 장면별 자막 생성. 6종 스타일 중 선택.</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">4</div>
+        <div>
+          <div class="flow-title">내보내기 (컷 + 자막 + 인코딩)</div>
+          <div class="flow-desc">3단계 파이프라인: 구간 제거 → 자막 번인(drawtext) → 포맷/화질/해상도 인코딩. 가로(16:9), 세로(9:16), 둘 다 지원.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 핵심 구현 기능 -->
+  <div class="section">
+    <div class="s-eye">Features</div>
+    <h2>핵심 구현 기능</h2>
+    <div class="feat-grid">
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </div>
+        <div class="ft">3-Pass Vision AI 자막</div>
+        <div class="fd">맥락 파악 → 장면 경계 감지 → 자막 텍스트 생성. Claude/Grok 듀얼 API 지원. 화면만 보고 자막 생성.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        </div>
+        <div class="ft">6종 자막 스타일</div>
+        <div class="fd">AI 자동 판단, 포트폴리오, 사내 교육, 클라이언트 납품, SNS 숏폼, QA 리포트 — 용도에 맞는 톤과 밀도 자동 전환.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+        </div>
+        <div class="ft">구간 미세 조절</div>
+        <div class="fd">아코디언 UI로 각 구간 펼쳐서 ±1s, ±0.1s 단위 조절. 프리뷰 재생으로 보존 구간만 순서대로 확인.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="17" x2="22" y2="17"/></svg>
+        </div>
+        <div class="ft">멀티 영상 병합 내보내기</div>
+        <div class="fd">여러 영상을 프로젝트에 추가, 드래그로 순서 변경. 각 영상별 컷+자막 적용 후 하나로 병합 내보내기.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        </div>
+        <div class="ft">프로젝트 자동 저장 + 복원</div>
+        <div class="fd">2초 debounce 자동 저장. 새로고침(F5) 시 가장 최근 프로젝트 자동 복원. 편집 상태 손실 없음.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+        </div>
+        <div class="ft">PWA + Darcula 테마</div>
+        <div class="fd">Chrome 설치형 앱(PWA) 지원. Android Studio 풍 Darcula 다크 테마. Happiness Sans 폰트.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="brand-divider">
+    <div class="brand-name">Inno<span>Forge</span> Inc.</div>
+    <div class="brand-sub">ai-powered video editing</div>
+  </div>
+
+  <!-- 스크린샷 -->
+  <div class="section">
+    <div class="s-eye">Screenshots</div>
+    <h2>앱 화면 — 실제 작동 흐름</h2>
+    <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">AITM 시연 영상을 편집하는 실제 화면입니다. 영상 로드 → 컷 편집 → AI 자막 생성까지의 전체 흐름.</p>
+
+    <div class="ss-gallery">
+      <div class="ss-item">
+        <img src="docs/1.jpg" alt="편집 탭 — 컷 구간 설정 + 프리뷰">
+        <div class="ss-caption"><span class="ss-step">STEP 1</span>편집 탭 — 좌클릭으로 제거 구간 설정, 미세 조절(±0.1s), 프리뷰 재생으로 결과 확인</div>
+      </div>
+
+      <div class="ss-item">
+        <img src="docs/2.jpg" alt="자막 탭 — AI 생성 자막 목록 + 싱크 조절">
+        <div class="ss-caption"><span class="ss-step">STEP 2</span>자막 탭 — AI가 생성한 18개 자막, 타임라인 마커 연동, 싱크 미세조절(±0.1s), 인라인 텍스트 편집</div>
+      </div>
+
+      <div class="ss-item">
+        <img src="docs/3.jpg" alt="AI 탭 — 3-Pass Vision 자막 생성 + 6종 스타일">
+        <div class="ss-caption"><span class="ss-step">STEP 3</span>AI 탭 — 6종 자막 스타일 선택, 컷 구간 자동 감지, 3-Pass Vision 분석으로 자막 자동 생성</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="brand-divider">
+    <div class="brand-name">Inno<span>Forge</span> Inc.</div>
+    <div class="brand-sub">built to ship</div>
+  </div>
+
+  <!-- 3-Pass AI 상세 -->
+  <div class="section">
+    <div class="s-eye">AI Architecture</div>
+    <h2>3-Pass Vision AI 자막 생성 구조</h2>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="flow-num">1</div>
+        <div>
+          <div class="flow-title">Pass 1 — 전체 맥락 파악</div>
+          <div class="flow-desc">영상에서 8장을 균등 샘플링하여 AI에 전달. "어떤 앱인지, 뭘 시연하는지, 전체 흐름은 어떤지" 3~5줄로 요약.</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">2</div>
+        <div>
+          <div class="flow-title">Pass 2 — 장면 경계 감지</div>
+          <div class="flow-desc">전체 프레임을 16장씩 배치로 AI에 전달. "화면이 의미 있게 바뀌는 시점"만 감지. 스크롤, 입력 등 무의미한 변화는 무시.</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">3</div>
+        <div>
+          <div class="flow-title">Pass 3 — 장면별 자막 생성</div>
+          <div class="flow-desc">감지된 장면마다 대표 프레임 1~2장 + 맥락 + 스타일 요약을 전달. "자막이 도움 되면 생성, 안 되면 null" — 과잉 자막 방지.</div>
+        </div>
+      </div>
+    </div>
+    <div class="result-box">
+      <div class="rb-title">비용 최적화</div>
+      <div class="rb-text">5초 간격 프레임 추출, 단일 FFmpeg 호출로 속도 5~10배 향상. 4분 영상 기준 약 $0.43. 실행 전 예상 비용 팝업으로 확인.</div>
+    </div>
+  </div>
+
+  <div class="brand-divider">
+    <div class="brand-name">Inno<span>Forge</span> Inc.</div>
+    <div class="brand-sub">optimized for cost</div>
+  </div>
+
+  <!-- 기술 스택 -->
+  <div class="section">
+    <div class="s-eye">Tech Stack</div>
+    <h2>사용 기술</h2>
+    <div class="stack-grid">
+      <div class="stack-item">
+        <span class="stack-label">Frontend</span>
+        <span class="stack-value">React 18 + Babel + Tailwind CSS</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-label">Backend</span>
+        <span class="stack-value">Python FastAPI + WebSocket</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-label">AI</span>
+        <span class="stack-value">Claude Vision + Grok Vision (듀얼)</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-label">Video</span>
+        <span class="stack-value">FFmpeg subprocess (Windows 호환)</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-label">Theme</span>
+        <span class="stack-value">Darcula (Android Studio 풍)</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-label">Font</span>
+        <span class="stack-value">Happiness Sans (해피니스 산스)</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-label">PWA</span>
+        <span class="stack-value">Service Worker + manifest.json</span>
+      </div>
+      <div class="stack-item">
+        <span class="stack-label">Security</span>
+        <span class="stack-value">Path Traversal 방어 + CORS 제한</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="brand-divider">
+    <div class="brand-name">Inno<span>Forge</span> Inc.</div>
+    <div class="brand-sub">manufacturing meets software</div>
+  </div>
+
+  <!-- 왜 만들었나 -->
+  <div class="section">
+    <div class="s-eye">Why This Exists</div>
+    <h2>왜 이 편집기를 만들었나</h2>
+    <p style="font-size:14px; color:var(--ink2); line-height:1.8;">
+      포트폴리오 시연 영상을 만들 때마다 같은 문제에 부딪혔습니다.
+      화면을 녹화하면 음성이 없고, 음성이 없으면 <strong>기존 편집기의 자동 자막 기능이 작동하지 않습니다.</strong>
+      결국 수십 개 자막을 하나하나 수동으로 입력해야 했습니다.
+    </p>
+    <p style="font-size:14px; color:var(--ink2); line-height:1.8; margin-top:12px;">
+      CutSense는 이 문제를 해결합니다. AI가 <strong>화면을 직접 보고</strong> 장면 전환을 감지하고, 시청자에게 필요한 자막을 자동 생성합니다.
+      편집기를 배우는 시간 대신, 편집기를 직접 만들었습니다.
+    </p>
+  </div>
+
+  <div class="brand-divider">
+    <div class="brand-name">Inno<span>Forge</span> Inc.</div>
+    <div class="brand-sub">from idea to production</div>
+  </div>
+
+  <!-- 개발 방식 + CTA -->
+  <div class="cta-section">
+    <div class="dev-eye">Development</div>
+    <div class="dev-title">1인 풀스택 개발</div>
+    <div class="dev-sub">기획 · 설계 · 프론트엔드 · 백엔드 · AI 프롬프트 엔지니어링 — 전 과정 단독 수행</div>
+    <div class="tag-row">
+      <span>AI Vision 자동 자막</span>
+      <span>영상 편집 자동화</span>
+      <span>포트폴리오 시연 영상</span>
+      <span>사내 교육 영상</span>
+      <span>데스크톱/웹 앱 개발</span>
+    </div>
+    <p style="margin-top:24px; font-size:15px; color:var(--ink2); font-weight:600;">비슷한 시스템이 필요하시면 크몽 메시지로 문의 주세요</p>
+    <p style="margin-top:4px; font-size:13px; color:var(--muted);">요구사항 분석부터 배포까지 직접 수행합니다</p>
+  </div>
+
+</div>
+
+<div class="footer">
+  InnoForge Inc. — Portfolio Preview
+</div>
+
+</body>
+</html>
